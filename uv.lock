@@ -1026,12 +1026,15 @@ source = { editable = "." }
 dependencies = [
     { name = "einops" },
     { name = "equinox" },
-    { name = "jax", extra = ["cuda12"] },
+    { name = "jax" },
     { name = "optax" },
     { name = "transformers" },
 ]
 
 [package.dev-dependencies]
+cuda12 = [
+    { name = "jax", extra = ["cuda12"] },
+]
 dev = [
     { name = "mypy" },
     { name = "pre-commit" },
@@ -1048,12 +1051,13 @@ torch = [
 requires-dist = [
     { name = "einops", specifier = ">=0.8.0" },
     { name = "equinox", specifier = ">=0.11.8" },
-    { name = "jax", extras = ["cuda12"], specifier = ">=0.4.35" },
+    { name = "jax", specifier = ">=0.4.35" },
     { name = "optax", specifier = ">=0.2.3" },
     { name = "transformers", specifier = ">=4.46.1" },
 ]
 
 [package.metadata.requires-dev]
+cuda12 = [{ name = "jax", extras = ["cuda12"], specifier = ">=0.4.35" }]
 dev = [
     { name = "mypy", specifier = ">=1.13.0" },
     { name = "pre-commit", specifier = ">=4.0.1" },

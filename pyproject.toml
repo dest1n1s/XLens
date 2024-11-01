@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "einops>=0.8.0",
     "equinox>=0.11.8",
-    "jax[cuda12]>=0.4.35",
+    "jax>=0.4.35",
     "optax>=0.2.3",
     "transformers>=4.46.1",
 ]
@@ -27,6 +27,9 @@ test = [
 ]
 torch = [
     "torch>=2.5.1",
+]
+cuda12 = [
+    "jax[cuda12]>=0.4.35",
 ]
 
 [tool.uv.workspace]
