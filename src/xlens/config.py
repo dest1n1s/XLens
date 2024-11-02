@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
+from xlens.utilities.activation_functions import SUPPORTED_ACTIVATIONS
+
 
 @dataclass
 class HookedTransformerConfig:
@@ -71,15 +73,6 @@ class HookedTransformerConfig:
         scale_attn_by_inverse_layer_idx (bool): Whether to scale the attention
             weights by 1/(layer_id+1), used by Mistral (Stanford) models for numerical stability when
             training in FP16. Defaults to False.
-        positional_embedding_type (str): The positional embedding used. Options
-            are 'standard' (ie GPT-2 style, absolute, randomly initialized learned positional
-            embeddings, directly added to the residual stream), 'rotary'
-            (described here: https://blog.eleuther.ai/rotary-embeddings/ ) and
-            'shortformer' (GPT-2 style absolute & learned, but rather than being
-            added to the residual stream they're only added to the inputs to the
-            keys and the queries (ie key = W_K(res_stream + pos_embed), but
-            values and MLPs don't get any positional info)). Sinusoidal are not
-            currently supported. Defaults to 'standard'.
         d_vocab_out (int, *optional*): The size of the output vocabulary. Defaults to -1, which means not set. If not
             set, will be equal to d_vocab. Mainly useful for algorithmic tasks
             where the input and output vocabularies may be different.
@@ -118,7 +111,6 @@ class HookedTransformerConfig:
     attn_only: bool = False
     initializer_range: float = -1.0
     scale_attn_by_inverse_layer_idx: bool = False
-    positional_embedding_type: str = "standard"
     d_vocab_out: int = -1
     default_prepend_bos: bool = True
     tokenizer_prepends_bos: Optional[bool] = None
@@ -142,14 +134,7 @@ class HookedTransformerConfig:
                 # For some reason everyone hard codes in this hyper-parameter!
                 self.d_mlp: int = self.d_model * 4
             assert self.act_fn is not None, "act_fn must be specified for non-attn-only models"
-            assert self.act_fn in [
-                "relu",
-                "gelu",
-                "silu",
-                "gelu_new",
-                "solu_ln",
-                "gelu_fast",
-            ], f"act_fn={self.act_fn} must be one of {'relu', 'gelu', 'silu', 'gelu_new', 'solu_ln', 'gelu_fast'}"
+            assert self.act_fn in SUPPORTED_ACTIVATIONS, f"act_fn={self.act_fn} must be one of {SUPPORTED_ACTIVATIONS}"
 
         if self.initializer_range < 0 and self.init_mode == "gpt2":
             # Roughly copy the GPT-2 value, but proportional to sqrt(1/d_model)
@@ -164,9 +149,6 @@ class HookedTransformerConfig:
             # If d_vocab is not set, it'll be inferred from tokenizer_name or from a tokenizer
             # explicitly passed to HookedTransformer initialisation.
             self.d_vocab_out = self.d_vocab
-
-        if self.positional_embedding_type == "rotary" and self.rotary_dim is None:
-            self.rotary_dim = self.d_head
 
         if self.use_attn_scale and self.attn_scale == -1.0:
             self.attn_scale = np.sqrt(self.d_head)

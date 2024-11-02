@@ -81,3 +81,28 @@ def set_nested_component(
     res = [component if filter_path(key_path) else x for key_path, x in res]
 
     return jax.tree_util.tree_unflatten(tree_def, res)
+
+
+def load_pretrained_weights(
+    model: U,
+    pretrained_weights: dict[str, T],
+    transformer_lens_compatible: bool = True,
+) -> U:
+    """Load pretrained weights into a model.
+
+    Args:
+        model: A PyTree.
+        pretrained_weights: A dictionary of pretrained weights.
+        transformer_lens_compatible: Whether the path is compatible with TransformerLens format.
+    """
+
+    res, tree_def = jax.tree_util.tree_flatten_with_path(model)
+
+    res = [
+        pretrained_weights.get(transformer_lens_compatible_path_str(key_path), x)
+        if transformer_lens_compatible_path_str(key_path) in pretrained_weights
+        else x
+        for key_path, x in res
+    ]
+
+    return jax.tree_util.tree_unflatten(tree_def, res)
