@@ -81,10 +81,9 @@ class HookedTransformer(eqx.Module):
         pos_embed = self.hook_pos_embed(self.pos_embed(tokens, 0, attention_mask))  # [batch, pos, d_model]
         residual = embed + pos_embed
 
-        for i, block in list(zip(range(self.cfg.n_layers), self.blocks)):  # type: ignore
+        for i, block in list(zip(range(self.cfg.n_layers), self.blocks)):
             # Note that each block includes skip connections, so we don't need
             # residual + block(residual)
-            # If we're using multiple GPUs, we need to send the residual and shortformer_pos_embed to the correct GPU
             residual = block(
                 residual,
                 attention_mask=attention_mask,
