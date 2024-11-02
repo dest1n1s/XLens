@@ -36,7 +36,7 @@ def get_nested_component(
         transformer_lens_compatible: Whether the path is compatible with TransformerLens format.
     """
 
-    res, _ = jax.tree_util.tree_flatten_with_path(
+    flattened, _ = jax.tree_util.tree_flatten_with_path(
         tree,
         is_leaf=None if component_type is None else lambda x: isinstance(x, component_type),
     )
@@ -46,7 +46,7 @@ def get_nested_component(
             [transformer_lens_compatible_path_str(key_path)] if transformer_lens_compatible else []
         )
 
-    res = [x for key_path, x in res if filter_path(key_path)]
+    res = [x for key_path, x in flattened if filter_path(key_path)]
     assert len(res) == 1, f"Expected 1 component, got {len(res)} components."
     return res[0]
 
@@ -68,7 +68,7 @@ def set_nested_component(
         transformer_lens_compatible: Whether the path is compatible with TransformerLens format.
     """
 
-    res, tree_def = jax.tree_util.tree_flatten_with_path(
+    flattened, tree_def = jax.tree_util.tree_flatten_with_path(
         tree,
         is_leaf=None if component_type is None else lambda x: isinstance(x, component_type),
     )
@@ -78,7 +78,7 @@ def set_nested_component(
             [transformer_lens_compatible_path_str(key_path)] if transformer_lens_compatible else []
         )
 
-    res = [component if filter_path(key_path) else x for key_path, x in res]
+    res = [component if filter_path(key_path) else x for key_path, x in flattened]
 
     return jax.tree_util.tree_unflatten(tree_def, res)
 
@@ -96,13 +96,13 @@ def load_pretrained_weights(
         transformer_lens_compatible: Whether the path is compatible with TransformerLens format.
     """
 
-    res, tree_def = jax.tree_util.tree_flatten_with_path(model)
+    flattened, tree_def = jax.tree_util.tree_flatten_with_path(model)
 
     res = [
         pretrained_weights.get(transformer_lens_compatible_path_str(key_path), x)
         if transformer_lens_compatible_path_str(key_path) in pretrained_weights
         else x
-        for key_path, x in res
+        for key_path, x in flattened
     ]
 
     return jax.tree_util.tree_unflatten(tree_def, res)

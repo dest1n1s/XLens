@@ -20,19 +20,20 @@ from .layer_norm import LayerNorm
 class Embed(eqx.Module):
     cfg: HookedTransformerConfig = eqx.field(static=True)
     W_E: Float[jax.Array, "d_vocab d_model"]
+    ln: Optional[LayerNorm]
 
     def __init__(self, cfg: HookedTransformerConfig):
         self.cfg = cfg
         self.W_E = jnp.zeros((self.cfg.d_vocab, self.cfg.d_model))
 
         # Some models (e.g. Bloom) need post embedding layer norm
-        if self.cfg.post_embedding_ln:
-            self.ln = LayerNorm(self.cfg)
+        self.ln = LayerNorm(self.cfg) if self.cfg.post_embedding_ln else None
 
     def __call__(self, tokens: Int[jax.Array, "batch pos"]) -> Float[jax.Array, "batch pos d_model"]:
         # If A has shape [a, b] and B has shape [c, d], then A[:, B] has shape [a, c, d]
         # B acts as a tensor of indices into the second dimension (so >=0 and <b)
         if self.cfg.post_embedding_ln:
+            assert self.ln is not None
             return self.ln(self.W_E[tokens, :])
         return self.W_E[tokens, :]
 

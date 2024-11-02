@@ -162,24 +162,6 @@ class Attention(eqx.Module):
         )  # [batch, pos, d_model]
         return out
 
-    def attn_linear(
-        input: Float[jax.Array, "batch pos head_index d_model"],
-        w: Float[jax.Array, "head_index d_model d_head"],
-        b: Float[jax.Array, "head_index d_head"],
-    ) -> Float[jax.Array, "batch pos head_index d_head"]:
-        """Linear layer for attention calculation.
-
-        This is almost the same as simple_attn_linear, but the input tensor has an extra head_index dimension, used when calculating the input of each attention head separately.
-        """
-        return (
-            einops.einsum(
-                input,
-                w,
-                "batch pos head_index d_model, head_index d_model d_head -> batch pos head_index d_head",
-            )
-            + b
-        )
-
     def calculate_qkv_matrices(
         self,
         query_input: Float[jax.Array, "batch pos d_model"],

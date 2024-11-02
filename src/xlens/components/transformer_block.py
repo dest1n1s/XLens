@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 import equinox as eqx
 import jax
@@ -16,10 +16,10 @@ LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
 class TransformerBlock(eqx.Module):
     cfg: HookedTransformerConfig = eqx.field(static=True)
 
-    ln1: eqx.Module
-    ln2: Optional[eqx.Module] = None
+    ln1: Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]
+    ln2: Optional[Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]]
     attn: Attention
-    mlp: Optional[MLP] = None
+    mlp: Optional[MLP]
 
     hook_attn_in: HookPoint
     hook_q_input: HookPoint
@@ -31,14 +31,17 @@ class TransformerBlock(eqx.Module):
     hook_mlp_out: HookPoint
 
     hook_resid_pre: HookPoint
-    hook_resid_mid: Optional[HookPoint] = None
+    hook_resid_mid: Optional[HookPoint]
     hook_resid_post: HookPoint
 
     def __init__(self, cfg: HookedTransformerConfig, block_index):
         self.cfg = cfg
 
         if cfg.normalization_type == "LN":
-            normalization_layer = LayerNorm
+            normalization_layer: Callable[
+                [HookedTransformerConfig],
+                Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]],
+            ] = LayerNorm
         elif cfg.normalization_type == "LNPre":
             # We've folded in LayerNorm weights, so just need the center + scale parts
             normalization_layer = LayerNormPre
@@ -55,15 +58,14 @@ class TransformerBlock(eqx.Module):
 
                 return identity
         else:
-            raise ValueError(f"Invalid normalization_type passed in: {self.normalization_type}")
+            raise ValueError(f"Invalid normalization_type passed in: {cfg.normalization_type}")
 
         self.ln1 = normalization_layer(cfg)
-        if not self.cfg.attn_only:
-            self.ln2 = normalization_layer(cfg)
+
+        self.ln2 = normalization_layer(cfg) if not self.cfg.attn_only else None
 
         self.attn = Attention(self.cfg, "global", block_index)
-        if not self.cfg.attn_only:
-            self.mlp = MLP(cfg)
+        self.mlp = MLP(cfg) if not self.cfg.attn_only else None
 
         self.hook_attn_in = HookPoint()  # [batch, pos, n_heads, d_model]
         self.hook_q_input = HookPoint()  # [batch, pos, n_heads, d_model]
@@ -75,8 +77,7 @@ class TransformerBlock(eqx.Module):
         self.hook_mlp_out = HookPoint()  # [batch, pos, d_model]
 
         self.hook_resid_pre = HookPoint()  # [batch, pos, d_model]
-        if not self.cfg.attn_only:
-            self.hook_resid_mid = HookPoint()  # [batch, pos, d_model]
+        self.hook_resid_mid = HookPoint() if not self.cfg.attn_only else None  # [batch, pos, d_model]
         self.hook_resid_post = HookPoint()  # [batch, pos, d_model]
 
     def __call__(
@@ -136,5 +137,6 @@ class TransformerBlock(eqx.Module):
         Returns:
             Float[jax.Array, "batch pos d_model"]: Our resulting tensor
         """
+        assert self.mlp is not None, "MLP must be defined if apply_mlp is called"
         mlp_out = self.mlp(normalized_resid)  # [batch, pos, d_model]
         return self.hook_mlp_out(mlp_out)

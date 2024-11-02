@@ -1,12 +1,13 @@
 from dataclasses import replace
-from typing import Callable, Self, TypeVar
+from typing import Callable, Generic, Self, TypeVar
 
 import equinox as eqx
+import jax
 
-T = TypeVar("T")
+T = TypeVar("T", default=jax.Array)
 
 
-class HookPoint(eqx.Module):
+class HookPoint(eqx.Module, Generic[T]):
     hooks: list[Callable[[T], T]] = eqx.field(static=True, default_factory=list)
 
     def __call__(self, x: T) -> T:

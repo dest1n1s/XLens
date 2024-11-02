@@ -19,7 +19,7 @@ class HookedTransformer(eqx.Module):
     embed: Embed
     pos_embed: PosEmbed
     blocks: list[TransformerBlock]
-    ln_final: Optional[LayerNormLike] = None
+    ln_final: Optional[LayerNormLike]
     unembed: Unembed
 
     hook_embed: HookPoint
@@ -44,9 +44,9 @@ class HookedTransformer(eqx.Module):
             # We've folded in LayerNorm weights, so just need the center + scale parts
             self.ln_final = LayerNormPre(self.cfg)
         elif self.cfg.normalization_type is None:
-            # If it's None, don't create either layer
-            pass
+            self.ln_final = None
         else:
+            self.ln_final = None
             logging.warning("Invalid normalization_type passed in %s", self.cfg.normalization_type)
         self.unembed = Unembed(self.cfg)
 

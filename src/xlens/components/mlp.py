@@ -29,18 +29,20 @@ class MLP(eqx.Module):
     W_out: Float[jax.Array, "d_mlp d_model"]
     b_out: Float[jax.Array, " d_model"]
 
-    ln: Optional[Union[LayerNorm, LayerNormPre]] = None
+    ln: Optional[Union[LayerNorm, LayerNormPre]]
 
     hook_pre: HookPoint
-    hook_mid: Optional[HookPoint] = None
+    hook_mid: Optional[HookPoint]
     hook_post: HookPoint
 
     def __init__(self, cfg: HookedTransformerConfig):
         self.cfg = cfg
 
-        self.act_fn = SUPPORTED_ACTIVATIONS.get(cfg.act_fn)
-        if self.act_fn is None:
+        assert cfg.act_fn in SUPPORTED_ACTIVATIONS, f"Unsupported activation function: {cfg.act_fn}"
+        act_fn = SUPPORTED_ACTIVATIONS.get(cfg.act_fn)
+        if act_fn is None:
             raise ValueError(f"Unsupported activation function: {cfg.act_fn}")
+        self.act_fn = act_fn
 
         self.W_in = jnp.zeros((cfg.d_model, cfg.d_mlp))
         self.b_in = jnp.zeros(cfg.d_mlp)
@@ -57,6 +59,9 @@ class MLP(eqx.Module):
                 self.ln = LayerNorm(self.cfg, self.cfg.d_mlp)
             else:
                 self.ln = LayerNormPre(self.cfg)
+        else:
+            self.hook_mid = None
+            self.ln = None
 
     def __call__(self, x: Float[jax.Array, "batch pos d_model"]) -> Float[jax.Array, "batch pos d_model"]:
         # There's no fused `addmm` here. May cause performance issues.

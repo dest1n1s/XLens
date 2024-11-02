@@ -102,6 +102,7 @@ class HookedTransformerConfig:
     use_attn_scale: bool = True
     attn_scale: float = -1.0
     model_name: str = "custom"
+    original_architecture: Optional[str] = None
     tokenizer_name: Optional[str] = None
     window_size: Optional[int] = None
     attn_types: Optional[List] = None

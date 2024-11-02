@@ -6,14 +6,14 @@ from xlens import HookPoint, get_nested_component, set_nested_component
 class ModuleA(eqx.Module):
     hook_point: HookPoint
 
-    def __forward__(self, x):
+    def __call__(self, x):
         return self.hook_point(x)
 
 
 class ModuleB(eqx.Module):
     module_as: list[ModuleA]
 
-    def __forward__(self, x):
+    def __call__(self, x):
         for module_a in self.module_as:
             x = module_a(x)
         return x
