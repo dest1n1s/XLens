@@ -1,8 +1,9 @@
 from dataclasses import replace
-from typing import Callable, Generic, Self, TypeVar
+from typing import Callable, Generic, Self
 
 import equinox as eqx
 import jax
+from typing_extensions import TypeVar
 
 T = TypeVar("T", default=jax.Array)
 
