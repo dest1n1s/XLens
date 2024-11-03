@@ -174,8 +174,12 @@ class Attention(eqx.Module):
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
-            q = self.hook_rot_q(self.apply_rotary(q, kv_cache_pos_offset, attention_mask))
-            k = self.hook_rot_k(self.apply_rotary(k, 0, attention_mask))  # keys are cached so no offset
+            q = self.hook_rot_q(
+                self.apply_rotary(q, kv_cache_pos_offset, attention_mask, rotary_dim=self.cfg.rotary_dim)
+            )
+            k = self.hook_rot_k(
+                self.apply_rotary(k, 0, attention_mask, rotary_dim=self.cfg.rotary_dim)
+            )  # keys are cached so no offset
 
         # Promote precision to float32 if using 16-bit precision
         if q.dtype not in [jnp.float32, jnp.float64]:
@@ -324,7 +328,7 @@ class Attention(eqx.Module):
         NTK_by_parts_low_freq_factor: float = 1.0,
         NTK_by_parts_high_freq_factor: float = 4.0,
         rotary_adjacent_pairs: bool = False,
-    ) -> Tuple[jax.Array, jax.Array]:
+    ) -> Tuple[Float[jax.Array, "n_ctx rotary_dim"], Float[jax.Array, "n_ctx rotary_dim"]]:
         """
         Calculate the sine and cosine waves to use in a rotary embedding.
         """

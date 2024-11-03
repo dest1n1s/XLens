@@ -16,6 +16,8 @@ LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
 class TransformerBlock(eqx.Module):
     cfg: HookedTransformerConfig = eqx.field(static=True)
 
+    layer_id: Optional[int] = eqx.field(static=True)
+
     ln1: Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]
     ln2: Optional[Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]]
     attn: Attention
@@ -34,8 +36,9 @@ class TransformerBlock(eqx.Module):
     hook_resid_mid: Optional[HookPoint]
     hook_resid_post: HookPoint
 
-    def __init__(self, cfg: HookedTransformerConfig, block_index):
+    def __init__(self, cfg: HookedTransformerConfig, block_index: int):
         self.cfg = cfg
+        self.layer_id = block_index
 
         if cfg.normalization_type == "LN":
             normalization_layer: Callable[

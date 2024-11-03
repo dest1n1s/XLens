@@ -15,7 +15,12 @@ from transformers import AutoConfig
 from transformers.utils import SAFE_WEIGHTS_NAME, cached_file
 
 from xlens.config import HookedTransformerConfig
-from xlens.pretrained.convert_weight import convert_gpt2_weights, convert_llama_weights, convert_qwen2_weights
+from xlens.pretrained.convert_weight import (
+    convert_gpt2_weights,
+    convert_llama_weights,
+    convert_neox_weights,
+    convert_qwen2_weights,
+)
 from xlens.utils import flatten_dict
 
 OFFICIAL_MODEL_NAMES = [
@@ -672,6 +677,26 @@ def convert_hf_model_config(model_name: str, **kwargs):
             "scale_attn_by_inverse_layer_idx": False,
             "normalization_type": "LN",
         }
+    elif architecture == "GPTNeoXForCausalLM":
+        cfg_dict = {
+            "d_model": hf_config.hidden_size,
+            "d_head": hf_config.hidden_size // hf_config.num_attention_heads,
+            "n_heads": hf_config.num_attention_heads,
+            "d_mlp": hf_config.intermediate_size,
+            "n_layers": hf_config.num_hidden_layers,
+            "n_ctx": hf_config.max_position_embeddings,
+            "eps": hf_config.layer_norm_eps,
+            "d_vocab": hf_config.vocab_size,
+            "act_fn": hf_config.hidden_act,
+            "use_attn_scale": True,
+            "scale_attn_by_inverse_layer_idx": False,
+            "parallel_attn_mlp": True,
+            "positional_embedding_type": "rotary",
+            "rotary_adjacent_pairs": False,
+            "normalization_type": "LN",
+        }
+        rotary_pct = hf_config.rotary_pct
+        cfg_dict["rotary_dim"] = round(rotary_pct * cfg_dict["d_head"])
     elif architecture == "LlamaForCausalLM":
         cfg_dict = {
             "d_model": hf_config.hidden_size,
@@ -865,6 +890,8 @@ def get_pretrained_state_dict(
         state_dict = convert_llama_weights(params, cfg)
     elif cfg.original_architecture == "Qwen2ForCausalLM":
         state_dict = convert_qwen2_weights(params, cfg)
+    elif cfg.original_architecture == "GPTNeoXForCausalLM":
+        state_dict = convert_neox_weights(params, cfg)
     else:
         raise ValueError(
             f"Loading weights from the architecture is not currently supported: {cfg.original_architecture}, generated from model name {cfg.model_name}. Feel free to open an issue on GitHub to request this feature."
