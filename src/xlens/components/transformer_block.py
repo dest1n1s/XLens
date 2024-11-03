@@ -6,7 +6,7 @@ from jaxtyping import Float, Int
 
 from xlens.components import LayerNorm, LayerNormPre, RMSNorm, RMSNormPre
 from xlens.components.attention import Attention
-from xlens.components.mlp import MLP
+from xlens.components.mlp import MLP, GatedMLP
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
 
@@ -19,7 +19,7 @@ class TransformerBlock(eqx.Module):
     ln1: Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]
     ln2: Optional[Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]]
     attn: Attention
-    mlp: Optional[MLP]
+    mlp: Optional[MLP | GatedMLP]
 
     hook_attn_in: HookPoint
     hook_q_input: HookPoint
@@ -65,7 +65,10 @@ class TransformerBlock(eqx.Module):
         self.ln2 = normalization_layer(cfg) if not self.cfg.attn_only else None
 
         self.attn = Attention(self.cfg, "global", block_index)
-        self.mlp = MLP(cfg) if not self.cfg.attn_only else None
+        if not self.cfg.attn_only:
+            self.mlp = GatedMLP(self.cfg) if self.cfg.gated_mlp else MLP(self.cfg)
+        else:
+            self.mlp = None
 
         self.hook_attn_in = HookPoint()  # [batch, pos, n_heads, d_model]
         self.hook_q_input = HookPoint()  # [batch, pos, n_heads, d_model]

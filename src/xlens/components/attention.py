@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Int
 
+from xlens.components.embed import get_offset_position_ids
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
 
@@ -14,19 +15,21 @@ class Attention(eqx.Module):
     cfg: HookedTransformerConfig = eqx.field(static=True)
 
     attn_type: str = eqx.field(static=True)
-    mask: Int[jax.Array, "pos pos"] = eqx.field(static=True)
-    IGNORE: float = eqx.field(static=True)
+    mask: Int[jax.Array, "pos pos"]
     layer_id: Optional[int] = eqx.field(static=True)
     attn_scale: float = eqx.field(static=True)
+    repeat_kv_heads: Optional[int] = eqx.field(static=True)
+    rotary_sin: Optional[Float[jax.Array, "n_ctx rotary_dim"]]
+    rotary_cos: Optional[Float[jax.Array, "n_ctx rotary_dim"]]
 
     W_Q: Float[jax.Array, "n_heads d_model d_head"]
+    W_K: Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]
+    W_V: Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]
     W_O: Float[jax.Array, "n_heads d_head d_model"]
-    W_K: Float[jax.Array, "n_heads d_model d_head"]
-    W_V: Float[jax.Array, "n_heads d_model d_head"]
 
     b_Q: Float[jax.Array, "n_heads d_head"]
-    b_K: Float[jax.Array, "n_heads d_head"]
-    b_V: Float[jax.Array, "n_heads d_head"]
+    b_K: Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]
+    b_V: Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]
     b_O: Float[jax.Array, " d_model"]
 
     hook_k: HookPoint
@@ -36,6 +39,8 @@ class Attention(eqx.Module):
     hook_attn_scores: HookPoint
     hook_pattern: HookPoint
     hook_result: HookPoint
+    hook_rot_k: Optional[HookPoint]
+    hook_rot_q: Optional[HookPoint]
 
     def __init__(
         self,
@@ -58,13 +63,25 @@ class Attention(eqx.Module):
 
         self.W_Q = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
         self.W_O = jnp.zeros((self.cfg.n_heads, self.cfg.d_head, self.cfg.d_model))
-        self.W_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
-        self.W_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
+        if self.cfg.n_key_value_heads is None:
+            self.W_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
+            self.W_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
+        else:
+            self.W_K = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head))
+            self.W_V = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head))
 
         self.b_Q = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
-        self.b_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
-        self.b_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
         self.b_O = jnp.zeros((self.cfg.d_model,))
+        if self.cfg.n_key_value_heads is None:
+            self.b_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
+            self.b_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
+        else:
+            self.b_K = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head))
+            self.b_V = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head))
+
+        self.repeat_kv_heads = (
+            self.cfg.n_heads // self.cfg.n_key_value_heads if self.cfg.n_key_value_heads is not None else None
+        )
 
         self.attn_type = attn_type
         # Create a max_ctx x max_ctx mask, with True iff that query position
@@ -77,11 +94,11 @@ class Attention(eqx.Module):
             # For local, this is banded, query - window_size < key <= query
             if not isinstance(self.cfg.window_size, int):
                 raise ValueError("Window size must be an integer for local attention")
-            self.mask = jnp.triu(causal_mask, 1 - self.cfg.window_size)
+            mask = jnp.triu(causal_mask, 1 - self.cfg.window_size)
+            self.mask = jax.lax.stop_gradient(mask)
         else:
             raise ValueError(f"Invalid attention type: {self.attn_type}")
 
-        self.IGNORE = -jnp.inf
         self.layer_id = layer_id
 
         # attn_scale is a constant that we divide the attention scores by pre-softmax. I'm not entirely sure why it matters, but it's probably a mix of softmax not being scale invariant and numerical stability?
@@ -101,6 +118,30 @@ class Attention(eqx.Module):
         self.hook_attn_scores = HookPoint()  # [batch, head_index, query_pos, key_pos]
         self.hook_pattern = HookPoint()  # [batch, head_index, query_pos, key_pos]
         self.hook_result = HookPoint()  # [batch, pos, head_index, d_model]
+
+        if self.cfg.positional_embedding_type == "rotary":
+            # Applies a rotation to each two-element chunk of keys and queries pre dot producting to bake in relative position. See HookedTransformerConfig for details
+            self.hook_rot_k = HookPoint()
+            self.hook_rot_q = HookPoint()
+            if self.cfg.rotary_dim is None:  # keep mypy happy
+                raise ValueError("Rotary dim must be provided for rotary positional embeddings")
+            rotary_sin, rotary_cos = self.calculate_sin_cos_rotary(
+                rotary_dim=self.cfg.rotary_dim,
+                n_ctx=self.cfg.n_ctx,
+                base=self.cfg.rotary_base,
+                use_NTK_by_parts_rope=self.cfg.use_NTK_by_parts_rope,
+                NTK_by_parts_factor=self.cfg.NTK_by_parts_factor,
+                NTK_by_parts_low_freq_factor=self.cfg.NTK_by_parts_low_freq_factor,
+                NTK_by_parts_high_freq_factor=self.cfg.NTK_by_parts_high_freq_factor,
+                rotary_adjacent_pairs=self.cfg.rotary_adjacent_pairs,
+            )
+            self.rotary_sin = jax.lax.stop_gradient(rotary_sin)
+            self.rotary_cos = jax.lax.stop_gradient(rotary_cos)
+        else:
+            self.hook_rot_k = None
+            self.hook_rot_q = None
+            self.rotary_sin = None
+            self.rotary_cos = None
 
     def __call__(
         self,
@@ -131,6 +172,17 @@ class Attention(eqx.Module):
 
         kv_cache_pos_offset = 0
 
+        if self.cfg.positional_embedding_type == "rotary":
+            assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
+            q = self.hook_rot_q(self.apply_rotary(q, kv_cache_pos_offset, attention_mask))
+            k = self.hook_rot_k(self.apply_rotary(k, 0, attention_mask))  # keys are cached so no offset
+
+        # Promote precision to float32 if using 16-bit precision
+        if q.dtype not in [jnp.float32, jnp.float64]:
+            q = q.astype(jnp.float32)
+        if k.dtype not in [jnp.float32, jnp.float64]:
+            k = k.astype(jnp.float32)
+
         attn_scores = self.calculate_attention_scores(q, k)  # [batch, head_index, query_pos, key_pos]
 
         if self.cfg.attention_dir == "causal":
@@ -142,6 +194,7 @@ class Attention(eqx.Module):
             attn_scores += additive_attention_mask
 
         attn_scores = self.hook_attn_scores(attn_scores)
+
         pattern = jax.nn.softmax(attn_scores, axis=-1)
         pattern = jnp.where(jnp.isnan(pattern), jnp.zeros_like(pattern), pattern)
         pattern = self.hook_pattern(pattern)  # [batch, head_index, query_pos, key_pos]
@@ -178,11 +231,20 @@ class Attention(eqx.Module):
             b: Float[jax.Array, "head_index d_head"],
         ) -> Float[jax.Array, "batch pos head_index d_head"]:
             """Linear layer for attention calculation."""
+            # return (
+            #     einops.einsum(
+            #         input,
+            #         w,
+            #         "batch pos d_model, head_index d_model d_head -> batch pos head_index d_head",
+            #     )
+            #     + b
+            # )
+            w = einops.rearrange(w, "head_index d_model d_head -> d_model (head_index d_head)")
             return (
-                einops.einsum(
-                    input,
-                    w,
-                    "batch pos d_model, head_index d_model d_head -> batch pos head_index d_head",
+                einops.rearrange(
+                    input @ w,
+                    "batch pos (head_index d_head) -> batch pos head_index d_head",
+                    d_head=self.cfg.d_head,
                 )
                 + b
             )
@@ -196,8 +258,14 @@ class Attention(eqx.Module):
     def calculate_attention_scores(
         self,
         q: Float[jax.Array, "batch query_pos head_index d_head"],
-        k: Float[jax.Array, "batch key_pos head_index d_head"],
+        k: Float[jax.Array, "batch key_pos kv_head_index d_head"],
     ) -> Float[jax.Array, "batch head_index query_pos key_pos"]:
+        if self.repeat_kv_heads is not None:
+            k = einops.repeat(
+                k,
+                "batch key_pos kv_head_index d_head -> batch key_pos (kv_head_index repeat_kv_heads) d_head",
+                repeat_kv_heads=self.repeat_kv_heads,
+            )
         q_ = einops.rearrange(q, "batch query_pos head_index d_head -> batch head_index query_pos d_head")
         k_ = einops.rearrange(k, "batch key_pos head_index d_head -> batch head_index d_head key_pos")
         attn_scores = q_ @ k_ / self.attn_scale
@@ -208,6 +276,12 @@ class Attention(eqx.Module):
         v: Float[jax.Array, "batch key_pos head_index d_head"],
         pattern: Float[jax.Array, "batch head_index query_pos key_pos"],
     ) -> Float[jax.Array, "batch query_pos head_index d_head"]:
+        if self.repeat_kv_heads is not None:
+            v = einops.repeat(
+                v,
+                "batch key_pos kv_head_index d_head -> batch key_pos (kv_head_index repeat_kv_heads) d_head",
+                repeat_kv_heads=self.repeat_kv_heads,
+            )
         v_ = einops.rearrange(v, "batch key_pos head_index d_head -> batch head_index key_pos d_head")
         pattern_ = einops.rearrange(
             pattern,
@@ -246,4 +320,102 @@ class Attention(eqx.Module):
                 final_mask, attention_mask, "batch head pos offset_pos, batch offset_pos -> batch head pos offset_pos"
             ).astype(bool)
 
-        return jnp.where(final_mask, attn_scores, self.IGNORE)
+        return jnp.where(final_mask, attn_scores, -jnp.inf)
+
+    @staticmethod
+    def calculate_sin_cos_rotary(
+        rotary_dim: int,
+        n_ctx: int,
+        base: int = 10000,
+        dtype=jnp.float32,
+        use_NTK_by_parts_rope: bool = False,
+        NTK_by_parts_factor: float = 8.0,
+        NTK_by_parts_low_freq_factor: float = 1.0,
+        NTK_by_parts_high_freq_factor: float = 4.0,
+        rotary_adjacent_pairs: bool = False,
+    ) -> Tuple[jax.Array, jax.Array]:
+        """
+        Calculate the sine and cosine waves to use in a rotary embedding.
+        """
+        pos = jnp.arange(n_ctx, dtype=dtype)
+        dim = jnp.arange(rotary_dim // 2, dtype=dtype)
+
+        if use_NTK_by_parts_rope:
+            inv_freq = 1.0 / (base ** (jnp.arange(0, rotary_dim, 2, dtype=jnp.int32).astype(dtype) / rotary_dim))
+            low_freq_wavelen = n_ctx / NTK_by_parts_low_freq_factor
+            high_freq_wavelen = n_ctx / NTK_by_parts_high_freq_factor
+
+            wavelen = 2 * jnp.pi / inv_freq
+            inv_freq_llama = jnp.where(wavelen > low_freq_wavelen, inv_freq / NTK_by_parts_factor, inv_freq)
+            smooth_factor = (n_ctx / wavelen - NTK_by_parts_low_freq_factor) / (
+                NTK_by_parts_high_freq_factor - NTK_by_parts_low_freq_factor
+            )
+            smoothed_inv_freq = (
+                1 - smooth_factor
+            ) * inv_freq_llama / NTK_by_parts_factor + smooth_factor * inv_freq_llama
+            is_medium_freq = ~(wavelen < high_freq_wavelen) & ~(wavelen > low_freq_wavelen)
+            inv_freq_llama = jnp.where(is_medium_freq, smoothed_inv_freq, inv_freq_llama)
+            freq = 1 / inv_freq_llama
+        else:
+            freq = base ** (dim / (rotary_dim / 2))
+
+        # Use einops to repeat frequencies
+        if rotary_adjacent_pairs:
+            freq = einops.repeat(freq, "d -> (d 2)")
+        else:
+            freq = einops.repeat(freq, "d -> (2 d)")
+
+        # Create a n_ctx x rotary_dim tensor, where each column is an arithmetic sequence of angles in that frequency
+        angles = pos[:, None] / freq[None, :]
+        return jnp.sin(angles).astype(dtype), jnp.cos(angles).astype(dtype)
+
+    def apply_rotary(
+        self,
+        x: Float[jax.Array, "batch pos head_index d_head"],
+        past_kv_pos_offset=0,
+        attention_mask: Optional[jnp.ndarray] = None,
+        rotary_dim: int = 64,
+    ) -> jnp.ndarray:
+        """
+        Apply rotary embeddings to the input tensor.
+        """
+        assert (
+            self.rotary_sin is not None and self.rotary_cos is not None
+        ), "Rotary sin and cos must be defined to apply rotary embeddings"
+
+        # Only apply rotary to first rotary_dim dimensions (e.g., if rotary_dim=64 and d_head=256, only apply to first 1/4 of dimensions)
+        x_pos = x.shape[1]
+        x_rot = x[..., :rotary_dim]
+        x_pass = x[..., rotary_dim:]
+        x_flip = self.rotate_every_two(x_rot)  # You need to define this function
+
+        if attention_mask is None:
+            rotary_cos_slice = self.rotary_cos[None, past_kv_pos_offset : past_kv_pos_offset + x_pos, None, :]
+            rotary_sin_slice = self.rotary_sin[None, past_kv_pos_offset : past_kv_pos_offset + x_pos, None, :]
+            x_rotated = x_rot * rotary_cos_slice + x_flip * rotary_sin_slice
+        else:
+            offset_position_ids = get_offset_position_ids(past_kv_pos_offset, attention_mask)
+            mask_rotary_cos = self.rotary_cos[offset_position_ids, None, :]
+            mask_rotary_sin = self.rotary_sin[offset_position_ids, None, :]
+            x_rotated = x_rot * mask_rotary_cos + x_flip * mask_rotary_sin
+
+        return jnp.concatenate([x_rotated, x_pass], axis=-1)
+
+    def rotate_every_two(self, x: Float[jax.Array, "... rotary_dim"]) -> Float[jax.Array, "... rotary_dim"]:
+        """
+        Rotary helper function, splits x into blocks of size 2 along the final axis and maps [x0, x1] to [-x1, x0]
+
+        The final axis of x must have even length.
+
+        GPT-NeoX and GPT-J do rotary subtly differently, see calculate_sin_cos_rotary for details.
+        """
+        rot_x = x
+        if self.cfg.rotary_adjacent_pairs:
+            rot_x = rot_x.at[..., ::2].set(-x[..., 1::2])
+            rot_x = rot_x.at[..., 1::2].set(x[..., ::2])
+        else:
+            n = x.shape[-1] // 2
+            rot_x = rot_x.at[..., :n].set(-x[..., n:])
+            rot_x = rot_x.at[..., n:].set(x[..., :n])
+
+        return rot_x

@@ -39,10 +39,16 @@ class HookedTransformer(eqx.Module):
         elif self.cfg.normalization_type == "RMSPre":
             self.ln_final = RMSNormPre(self.cfg)
         elif self.cfg.normalization_type == "LN":
-            self.ln_final = LayerNorm(self.cfg)
+            if self.cfg.final_rms:
+                self.ln_final = RMSNorm(self.cfg)
+            else:
+                self.ln_final = LayerNorm(self.cfg)
         elif self.cfg.normalization_type == "LNPre":
             # We've folded in LayerNorm weights, so just need the center + scale parts
-            self.ln_final = LayerNormPre(self.cfg)
+            if self.cfg.final_rms:
+                self.ln_final = RMSNormPre(self.cfg)
+            else:
+                self.ln_final = LayerNormPre(self.cfg)
         elif self.cfg.normalization_type is None:
             self.ln_final = None
         else:
@@ -92,5 +98,6 @@ class HookedTransformer(eqx.Module):
         if self.cfg.normalization_type is not None:
             assert self.ln_final is not None, "ln_final should be set if normalization_type is set"
             residual = self.ln_final(residual)  # [batch, pos, d_model]
+
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
         return logits

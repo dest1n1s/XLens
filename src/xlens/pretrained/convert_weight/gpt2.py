@@ -6,6 +6,8 @@ from xlens.config import HookedTransformerConfig
 
 
 def convert_gpt2_weights(params: dict[str, jax.Array], cfg: HookedTransformerConfig):
+    if not any(k.startswith("transformer.") for k in params.keys()):
+        params = {f"transformer.{k}": v for k, v in params.items()} | {"lm_head.weight": params["wte.weight"]}
     state_dict = {}
 
     state_dict["embed.W_E"] = params["transformer.wte.weight"]
@@ -58,12 +60,12 @@ def convert_gpt2_weights(params: dict[str, jax.Array], cfg: HookedTransformerCon
         assert state_dict[f"blocks.{l}.ln2.b"].shape == (cfg.d_model,)
 
         state_dict[f"blocks.{l}.mlp.W_in"] = params[f"transformer.h.{l}.mlp.c_fc.weight"]
-        assert state_dict[f"blocks.{l}.mlp.W_in"].shape == (cfg.d_model, cfg.d_model)
+        assert state_dict[f"blocks.{l}.mlp.W_in"].shape == (cfg.d_model, cfg.d_mlp)
         state_dict[f"blocks.{l}.mlp.b_in"] = params[f"transformer.h.{l}.mlp.c_fc.bias"]
-        assert state_dict[f"blocks.{l}.mlp.b_in"].shape == (cfg.d_model,)
+        assert state_dict[f"blocks.{l}.mlp.b_in"].shape == (cfg.d_mlp,)
 
         state_dict[f"blocks.{l}.mlp.W_out"] = params[f"transformer.h.{l}.mlp.c_proj.weight"]
-        assert state_dict[f"blocks.{l}.mlp.W_out"].shape == (cfg.d_model, cfg.d_model)
+        assert state_dict[f"blocks.{l}.mlp.W_out"].shape == (cfg.d_mlp, cfg.d_model)
         state_dict[f"blocks.{l}.mlp.b_out"] = params[f"transformer.h.{l}.mlp.c_proj.bias"]
         assert state_dict[f"blocks.{l}.mlp.b_out"].shape == (cfg.d_model,)
 

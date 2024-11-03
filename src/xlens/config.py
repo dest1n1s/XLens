@@ -7,11 +7,10 @@ Module with a dataclass for storing the configuration of a
 from __future__ import annotations
 
 import logging
+import math
 import pprint
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
-
-import numpy as np
 
 from xlens.utilities.activation_functions import SUPPORTED_ACTIVATIONS
 
@@ -73,9 +72,23 @@ class HookedTransformerConfig:
         scale_attn_by_inverse_layer_idx (bool): Whether to scale the attention
             weights by 1/(layer_id+1), used by Mistral (Stanford) models for numerical stability when
             training in FP16. Defaults to False.
+        positional_embedding_type (str): The positional embedding used. Options
+            are 'standard' (ie GPT-2 style, absolute, randomly initialized learned positional
+            embeddings, directly added to the residual stream) and 'rotary'
+            (described here: https://blog.eleuther.ai/rotary-embeddings/ ). Sinusoidal and Shortformer are not
+            currently supported. Defaults to 'standard'.
+        final_rms (bool): Whether to replace the final normalization (just
+            before the unembed) with RMSNorm (ie no centering or bias, just
+            scaling + weights). Only included because of a dumb bug in my
+            original SoLU code. Defaults to False.
         d_vocab_out (int, *optional*): The size of the output vocabulary. Defaults to -1, which means not set. If not
             set, will be equal to d_vocab. Mainly useful for algorithmic tasks
             where the input and output vocabularies may be different.
+        rotary_dim (int, *optional*): The dimensionality of the rotary
+            embeddings, may be d_head in which case only the first rotary_dim
+            dimensions of each head are rotated. Defaults to None, if
+            positional_embedding_type=="rotary" post-init then sets it to d_head, i.e. "rotate all
+            dimensions of the query and key".
         default_prepend_bos (bool, optional): Default behavior of whether to prepend the BOS token when the
             methods of HookedTransformer process input text to tokenize (only when input is a string).
             Defaults to True - even for models not explicitly trained with this, heads often use the
@@ -86,8 +99,21 @@ class HookedTransformerConfig:
         tokenizer_prepends_bos (bool, *optional*): This flag is set by set_tokenizer. It is set to True only
             when the tokenizer automatically prepends the BOS token if initialized with add_bos_token=True.
             We need this information to dynamically control bos prepending.
+        n_key_value_heads (int, *optional*): The number of groups of heads that use the same key and value matrix.
+            Only for models that use Grouped Query Attention.
         post_embedding_ln (bool): Whether to apply layer normalization after embedding the tokens. Defaults
             to False.
+        use_NTK_by_parts_rope (bool): Whether to apply the "NTK-by-parts" method when using Rotary
+            Positional Embedding. This method adjusts the interpolation based on frequency factors
+            for different parts of the hidden dimensions. See Section 3.2 in
+            https://arxiv.org/pdf/2309.00071 for details. Defaults to False.
+        NTK_by_parts_low_freq_factor (float): The threshold applied to low-frequency hidden
+            dimensions during interpolation when using the "NTK-by-parts" method. Defaults to 1.0.
+        NTK_by_parts_high_freq_factor (float): The threshold applied to high-frequency hidden
+            dimensions during interpolation in the "NTK-by-parts" method. Defaults to 4.0.
+        NTK_by_parts_factor (float): The overall factor used in the "NTK-by-parts" method that
+            affects the rate of change between low and high-frequency interpolation strategies.
+            Defaults to 8.0.
     """
 
     d_model: int
@@ -112,10 +138,21 @@ class HookedTransformerConfig:
     attn_only: bool = False
     initializer_range: float = -1.0
     scale_attn_by_inverse_layer_idx: bool = False
+    positional_embedding_type: str = "standard"
+    final_rms: bool = False
     d_vocab_out: int = -1
+    rotary_dim: Optional[int] = None
+    rotary_base: int = 10000
+    rotary_adjacent_pairs: bool = False
+    gated_mlp: bool = False
     default_prepend_bos: bool = True
     tokenizer_prepends_bos: Optional[bool] = None
+    n_key_value_heads: Optional[int] = None
     post_embedding_ln: bool = False
+    use_NTK_by_parts_rope: bool = False
+    NTK_by_parts_low_freq_factor: float = 1.0
+    NTK_by_parts_high_freq_factor: float = 4.0
+    NTK_by_parts_factor: float = 8.0
 
     def __post_init__(self):
         if self.n_heads == -1:
@@ -139,7 +176,7 @@ class HookedTransformerConfig:
 
         if self.initializer_range < 0 and self.init_mode == "gpt2":
             # Roughly copy the GPT-2 value, but proportional to sqrt(1/d_model)
-            self.initializer_range = 0.8 / np.sqrt(self.d_model)
+            self.initializer_range = 0.8 / math.sqrt(self.d_model)
 
         if self.initializer_range < 0 and self.init_mode != "gpt2":
             # This is the gain parameter for the weight initialisation
@@ -151,8 +188,11 @@ class HookedTransformerConfig:
             # explicitly passed to HookedTransformer initialisation.
             self.d_vocab_out = self.d_vocab
 
+        if self.positional_embedding_type == "rotary" and self.rotary_dim is None:
+            self.rotary_dim = self.d_head
+
         if self.use_attn_scale and self.attn_scale == -1.0:
-            self.attn_scale = np.sqrt(self.d_head)
+            self.attn_scale = math.sqrt(self.d_head)
 
         assert self.default_prepend_bos in [
             True,
