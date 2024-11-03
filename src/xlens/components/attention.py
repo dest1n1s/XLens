@@ -174,6 +174,7 @@ class Attention(eqx.Module):
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
+            assert self.cfg.rotary_dim is not None, "Rotary dim must be defined"
             q = self.hook_rot_q(
                 self.apply_rotary(q, kv_cache_pos_offset, attention_mask, rotary_dim=self.cfg.rotary_dim)
             )

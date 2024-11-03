@@ -1,11 +1,12 @@
 import logging
-from typing import Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import equinox as eqx
 import jax
 from jaxtyping import Float, Int
 
 from xlens.components import Embed, LayerNorm, LayerNormPre, PosEmbed, RMSNorm, RMSNormPre, TransformerBlock, Unembed
+from xlens.hooks import with_cache, with_hooks
 
 from .config import HookedTransformerConfig
 from .hooks import HookPoint
@@ -101,3 +102,54 @@ class HookedTransformer(eqx.Module):
 
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
         return logits
+
+    def run_with_hooks(
+        self,
+        input: Int[jax.Array, "batch pos"],
+        attention_mask: Optional[jax.Array] = None,  # [batch pos]
+        hooks: list[tuple[str, Callable[[Any], Any]]] = [],
+    ) -> Float[jax.Array, "batch pos d_vocab"]:
+        """Forward Pass with hooks.
+
+        This is the same as the normal forward pass, but allows you to add hooks to the forward pass
+        which can be used to extract intermediate values from the model.
+
+        Args:
+            attention_mask: Optional[jax.Array]: Override the attention mask used to ignore
+                padded tokens. If start_at_layer is not None and (self.tokenizer.padding_side ==
+                "left" or past_kv_cache is not None), this should be passed as the attention mask
+                is not computed automatically. Defaults to None.
+            hooks: list[tuple[str, Callable[[Any], Any]]]: A list of tuples, where the first element
+                is the name of the hook, and the second element is a callable that takes in a value
+                and returns a value. The callable should be a pure function, as it will be called
+                multiple times. Defaults to [].
+        """
+
+        model = with_hooks(self, hooks)
+
+        return model(input, attention_mask=attention_mask)
+
+    def run_with_cache(
+        self,
+        input: Int[jax.Array, "batch pos"],
+        attention_mask: Optional[jax.Array] = None,  # [batch pos]
+        hook_names: list[str] = [],
+    ) -> tuple[Float[jax.Array, "batch pos d_vocab"], dict[str, Any]]:
+        """Forward Pass with cache.
+
+        This is the same as the normal forward pass, but allows you to pass in a cache dictionary
+        which can be used to store and retrieve intermediate values from the model.
+
+        Args:
+            attention_mask: Optional[jax.Array]: Override the attention mask used to ignore
+                padded tokens. If start_at_layer is not None and (self.tokenizer.padding_side ==
+                "left" or past_kv_cache is not None), this should be passed as the attention mask
+                is not computed automatically. Defaults to None.
+            hook_names: list[str]: A list of strings, where each string is the name of a hook point
+        """
+
+        model, cache = with_cache(self, hook_names)
+
+        out = model(input, attention_mask=attention_mask)
+
+        return out, cache
