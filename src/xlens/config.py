@@ -10,7 +10,7 @@ import logging
 import math
 import pprint
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from xlens.utilities.activation_functions import SUPPORTED_ACTIVATIONS
 
@@ -29,12 +29,11 @@ class HookedTransformerConfig:
         d_head (int): The dimensionality of each attention head.
         n_layers (int): The number of transformer blocks (one block = one attn layer AND one MLP layer).
         n_ctx (int): The maximum sequence length.
+        d_vocab (int): The size of the vocabulary.
         n_heads (int): The number of attention heads. If not
             specified, will be set to d_model // d_head. (This is represented by a default value of -1)
         d_mlp (int, *optional*): The dimensionality of the feedforward mlp
             network. Defaults to 4 * d_model, and in an attn-only model is None.
-        d_vocab (int): The size of the vocabulary. Defaults to -1, which means not set. If not set, will be
-            automatically set from the tokenizer's vocab size.
         act_fn (str, *optional*): The activation function to use. Always
             lowercase. Supports ['relu', 'gelu', 'silu', 'gelu_new', 'solu_ln',
             'gelu_fast']. Must be set unless using an attn-only model.
@@ -44,9 +43,8 @@ class HookedTransformerConfig:
             1/sqrt(d_head)
         attn_scale (float): The amount to divide attention scores by (if applicable). Defaults to
             sqrt(d_head)
-        tokenizer_name (str, *optional*): the full name of the model, passed into
-            HuggingFace to access the tokenizer. Only used when passing in
-            custom config, if loading from pretrained then this is not needed.
+        use_local_attn (bool): whether to use local attention - ie each
+            destination token can only attend to source tokens a certain distance back.
         window_size (int, *optional*): the size of the window for local
             attention
         attn_types (List[str], *optional*): the types of attention to use for
@@ -99,9 +97,6 @@ class HookedTransformerConfig:
             so this empirically seems to give better results. To change the default behavior to False, pass in
             default_prepend_bos=False. Note that you can also locally override the default behavior by passing
             in prepend_bos=True/False when you call a method that processes the input string.
-        tokenizer_prepends_bos (bool, *optional*): This flag is set by set_tokenizer. It is set to True only
-            when the tokenizer automatically prepends the BOS token if initialized with add_bos_token=True.
-            We need this information to dynamically control bos prepending.
         n_key_value_heads (int, *optional*): The number of groups of heads that use the same key and value matrix.
             Only for models that use Grouped Query Attention.
         post_embedding_ln (bool): Whether to apply layer normalization after embedding the tokens. Defaults
@@ -123,18 +118,18 @@ class HookedTransformerConfig:
     d_head: int
     n_layers: int
     n_ctx: int
+    d_vocab: int
     n_heads: int = -1
     d_mlp: Optional[int] = None
-    d_vocab: int = -1
     act_fn: Optional[str] = None
     eps: float = 1e-5
     use_attn_scale: bool = True
     attn_scale: float = -1.0
+    use_local_attn: bool = False
+    window_size: Optional[int] = None
+    attn_types: Optional[list[str]] = None
     model_name: str = "custom"
     original_architecture: Optional[str] = None
-    tokenizer_name: Optional[str] = None
-    window_size: Optional[int] = None
-    attn_types: Optional[List] = None
     init_mode: str = "gpt2"
     normalization_type: Optional[str] = "LN"
     attention_dir: str = "causal"
@@ -150,7 +145,6 @@ class HookedTransformerConfig:
     rotary_adjacent_pairs: bool = False
     gated_mlp: bool = False
     default_prepend_bos: bool = True
-    tokenizer_prepends_bos: Optional[bool] = None
     n_key_value_heads: Optional[int] = None
     post_embedding_ln: bool = False
     use_NTK_by_parts_rope: bool = False
@@ -188,8 +182,6 @@ class HookedTransformerConfig:
 
         if self.d_vocab_out == -1:
             # d_vocab_out defaults to d_vocab, unless there's an algorithmic task
-            # If d_vocab is not set, it'll be inferred from tokenizer_name or from a tokenizer
-            # explicitly passed to HookedTransformer initialisation.
             self.d_vocab_out = self.d_vocab
 
         if self.positional_embedding_type == "rotary" and self.rotary_dim is None:
@@ -204,14 +196,7 @@ class HookedTransformerConfig:
         ], f"padding_side must be either True or False, but {self.default_prepend_bos} is given"
 
     @classmethod
-    def unwrap(cls, config: Union[Dict, "HookedTransformerConfig"]) -> HookedTransformerConfig:
-        """
-        Convenience function to avoid duplicate code from a common way config is passed to various components
-        """
-        return HookedTransformerConfig.from_dict(config) if isinstance(config, Dict) else config
-
-    @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> HookedTransformerConfig:
+    def from_dict(cls, config_dict: dict[str, Any]) -> HookedTransformerConfig:
         """
         Instantiates a `HookedTransformerConfig` from a Python dictionary of
         parameters.

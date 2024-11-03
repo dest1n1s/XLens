@@ -67,7 +67,13 @@ class TransformerBlock(eqx.Module):
 
         self.ln2 = normalization_layer(cfg) if not self.cfg.attn_only else None
 
-        self.attn = Attention(self.cfg, "global", block_index)
+        if not self.cfg.use_local_attn:
+            attn_type = "global"
+        else:
+            assert self.cfg.attn_types is not None, "attn_types must be defined if use_local_attn is True"
+            attn_type = self.cfg.attn_types[block_index]
+        self.attn = Attention(self.cfg, attn_type, block_index)
+
         if not self.cfg.attn_only:
             self.mlp = GatedMLP(self.cfg) if self.cfg.gated_mlp else MLP(self.cfg)
         else:

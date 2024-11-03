@@ -18,6 +18,7 @@ from xlens.config import HookedTransformerConfig
 from xlens.pretrained.convert_weight import (
     convert_gpt2_weights,
     convert_llama_weights,
+    convert_mistral_weights,
     convert_neox_weights,
     convert_qwen2_weights,
 )
@@ -86,6 +87,9 @@ OFFICIAL_MODEL_NAMES = [
     "meta-llama/Llama-3.1-8B",
     "meta-llama/Llama-3.1-8B-Instruct",
     "meta-llama/Llama-3.1-70B-Instruct",
+    "mistralai/Mistral-7B-v0.1",
+    "mistralai/Mistral-7B-Instruct-v0.1",
+    "mistralai/Mistral-Nemo-Base-2407",
     "Qwen/Qwen-1_8B",
     "Qwen/Qwen-7B",
     "Qwen/Qwen-14B",
@@ -296,6 +300,9 @@ MODEL_ALIASES = {
         "EleutherAI/pythia-125m-seed3",
         "pythia-125m-seed3",  # EleutherAI renamed this model"
     ],
+    "mistralai/Mistral-7B-v0.1": ["mistral-7b"],
+    "mistralai/Mistral-7B-Instruct-v0.1": ["mistral-7b-instruct"],
+    "mistralai/Mistral-Nemo-Base-2407": ["mistral-nemo-base-2407"],
     "gpt2": ["gpt2-small"],
     "llama-7b-hf": ["llama-7b"],
     "llama-13b-hf": ["llama-13b"],
@@ -697,6 +704,29 @@ def convert_hf_model_config(model_name: str, **kwargs):
         }
         rotary_pct = hf_config.rotary_pct
         cfg_dict["rotary_dim"] = round(rotary_pct * cfg_dict["d_head"])
+    elif architecture == "MistralForCausalLM":
+        use_local_attn = True if hf_config.sliding_window else False
+        cfg_dict = {
+            "d_model": hf_config.hidden_size,
+            "d_head": hf_config.head_dim
+            if hasattr(hf_config, "head_dim") and hf_config.head_dim > 0
+            else hf_config.hidden_size // hf_config.num_attention_heads,
+            "n_heads": hf_config.num_attention_heads,
+            "d_mlp": hf_config.intermediate_size,
+            "n_layers": hf_config.num_hidden_layers,
+            "n_ctx": 2048,  # Capped due to memory issues
+            "d_vocab": hf_config.vocab_size,
+            "act_fn": hf_config.hidden_act,
+            "window_size": hf_config.sliding_window,  # None if no sliding window was used
+            "attn_types": ["local"] * hf_config.num_hidden_layers if use_local_attn else None,
+            "eps": hf_config.rms_norm_eps,
+            "rotary_base": hf_config.rope_theta,
+            "n_key_value_heads": hf_config.num_key_value_heads,
+            "use_local_attn": use_local_attn,
+            "normalization_type": "RMS",
+            "positional_embedding_type": "rotary",
+            "gated_mlp": True,
+        }
     elif architecture == "LlamaForCausalLM":
         cfg_dict = {
             "d_model": hf_config.hidden_size,
@@ -740,8 +770,6 @@ def convert_hf_model_config(model_name: str, **kwargs):
             "positional_embedding_type": "rotary",
             "rotary_dim": hf_config.kv_channels,
             "rotary_adjacent_pairs": False,
-            "tokenizer_prepends_bos": True,
-            "trust_remote_code": True,
             "final_rms": True,
             "gated_mlp": True,
         }
@@ -765,7 +793,6 @@ def convert_hf_model_config(model_name: str, **kwargs):
             "rotary_base": hf_config.rope_theta,
             "rotary_adjacent_pairs": False,
             "rotary_dim": hf_config.hidden_size // hf_config.num_attention_heads,
-            "tokenizer_prepends_bos": True,
             "final_rms": True,
             "gated_mlp": True,
         }
@@ -773,8 +800,6 @@ def convert_hf_model_config(model_name: str, **kwargs):
         raise NotImplementedError(f"{architecture} is not currently supported.")
     # All of these models use LayerNorm
     cfg_dict["original_architecture"] = architecture
-    # The name such that AutoTokenizer.from_pretrained works
-    cfg_dict["tokenizer_name"] = official_model_name
     if kwargs.get("trust_remote_code", False):
         cfg_dict["trust_remote_code"] = True
     return cfg_dict
@@ -892,6 +917,8 @@ def get_pretrained_state_dict(
         state_dict = convert_qwen2_weights(params, cfg)
     elif cfg.original_architecture == "GPTNeoXForCausalLM":
         state_dict = convert_neox_weights(params, cfg)
+    elif cfg.original_architecture == "MistralForCausalLM":
+        state_dict = convert_mistral_weights(params, cfg)
     else:
         raise ValueError(
             f"Loading weights from the architecture is not currently supported: {cfg.original_architecture}, generated from model name {cfg.model_name}. Feel free to open an issue on GitHub to request this feature."

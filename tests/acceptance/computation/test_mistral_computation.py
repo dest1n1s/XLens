@@ -9,15 +9,15 @@ from xlens.utils import load_pretrained_weights
 pytest.importorskip("torch")
 
 import torch  # noqa: E402
-from transformers import AutoTokenizer, GPTNeoXForCausalLM  # noqa: E402
+from transformers import AutoTokenizer, MistralForCausalLM  # noqa: E402
 
 
 @torch.no_grad()
-def test_pythia_computation():
-    hf_model = GPTNeoXForCausalLM.from_pretrained(
-        "EleutherAI/pythia-70m", torch_dtype=torch.float32, attn_implementation="eager"
+def test_mistral_computation():
+    hf_model = MistralForCausalLM.from_pretrained(
+        "mistralai/Mistral-7B-v0.1", torch_dtype=torch.float32, attn_implementation="eager"
     )
-    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-70m")
+    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
     hf_model.eval()
 
     hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
@@ -27,8 +27,8 @@ def test_pythia_computation():
     del hf_model
     torch.cuda.empty_cache()
 
-    cfg = get_pretrained_model_config("EleutherAI/pythia-70m")
-    state_dict = get_pretrained_state_dict("EleutherAI/pythia-70m", cfg)
+    cfg = get_pretrained_model_config("mistralai/Mistral-7B-v0.1")
+    state_dict = get_pretrained_state_dict("mistralai/Mistral-7B-v0.1", cfg)
     model = HookedTransformer(cfg)
     model = load_pretrained_weights(model, state_dict)
 
@@ -46,4 +46,4 @@ def test_pythia_computation():
 
 
 if __name__ == "__main__":
-    test_pythia_computation()
+    test_mistral_computation()
