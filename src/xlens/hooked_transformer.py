@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Self, Union
 
 import equinox as eqx
 import jax
@@ -7,6 +7,8 @@ from jaxtyping import Float, Int
 
 from xlens.components import Embed, LayerNorm, LayerNormPre, PosEmbed, RMSNorm, RMSNormPre, TransformerBlock, Unembed
 from xlens.hooks import with_cache, with_hooks
+from xlens.pretrained.loading_from_pretrained import get_pretrained_model_config, get_pretrained_state_dict
+from xlens.utils import load_pretrained_weights
 
 from .config import HookedTransformerConfig
 from .hooks import HookPoint
@@ -63,7 +65,7 @@ class HookedTransformer(eqx.Module):
 
     def __call__(
         self,
-        input: Int[jax.Array, "batch pos"],
+        input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
     ) -> Float[jax.Array, "batch pos d_vocab"]:
         """Forward Pass.
@@ -83,7 +85,7 @@ class HookedTransformer(eqx.Module):
                 is not computed automatically. Defaults to None.
         """
 
-        tokens = self.hook_tokens(input)  # [batch, pos]
+        tokens = self.hook_tokens(input_ids)  # [batch, pos]
         embed = self.hook_embed(self.embed(tokens))  # [batch, pos, d_model]
         pos_embed = self.hook_pos_embed(self.pos_embed(tokens, 0, attention_mask))  # [batch, pos, d_model]
         residual = embed + pos_embed
@@ -105,7 +107,7 @@ class HookedTransformer(eqx.Module):
 
     def run_with_hooks(
         self,
-        input: Int[jax.Array, "batch pos"],
+        input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
         hooks: list[tuple[str, Callable[[Any], Any]]] = [],
     ) -> Float[jax.Array, "batch pos d_vocab"]:
@@ -127,11 +129,11 @@ class HookedTransformer(eqx.Module):
 
         model = with_hooks(self, hooks)
 
-        return model(input, attention_mask=attention_mask)
+        return model(input_ids, attention_mask=attention_mask)
 
     def run_with_cache(
         self,
-        input: Int[jax.Array, "batch pos"],
+        input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
         hook_names: list[str] = [],
     ) -> tuple[Float[jax.Array, "batch pos d_vocab"], dict[str, Any]]:
@@ -150,6 +152,22 @@ class HookedTransformer(eqx.Module):
 
         model, cache = with_cache(self, hook_names)
 
-        out = model(input, attention_mask=attention_mask)
+        out = model(input_ids, attention_mask=attention_mask)
 
         return out, cache
+
+    @classmethod
+    def from_pretrained(cls, model_name: str, hf_model=None) -> Self:
+        """Load a pretrained model.
+
+        Args:
+            model_name: str: The name of the model to load.
+            hf_model: Optionally, a HuggingFace model object. If provided, we will use
+                these weights rather than reloading the model.
+        """
+
+        cfg = get_pretrained_model_config(model_name)
+        state_dict = get_pretrained_state_dict(model_name, cfg, hf_model=hf_model)
+        model = HookedTransformer(cfg)
+        model = load_pretrained_weights(model, state_dict)
+        return model

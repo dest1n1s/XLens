@@ -3,8 +3,6 @@ import jax.numpy as jnp
 import pytest
 
 from xlens import HookedTransformer
-from xlens.pretrained import get_pretrained_model_config, get_pretrained_state_dict
-from xlens.utils import load_pretrained_weights
 
 pytest.importorskip("torch")
 
@@ -25,10 +23,7 @@ def test_llama_computation():
     del hf_model
     torch.cuda.empty_cache()
 
-    cfg = get_pretrained_model_config("meta-llama/Llama-3.2-1B")
-    state_dict = get_pretrained_state_dict("meta-llama/Llama-3.2-1B", cfg)
-    model = HookedTransformer(cfg)
-    model = load_pretrained_weights(model, state_dict)
+    model = HookedTransformer.from_pretrained("meta-llama/Llama-3.2-1B")
 
     input = jnp.array(hf_input)
     logits = model(input)

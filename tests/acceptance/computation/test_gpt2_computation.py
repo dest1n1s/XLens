@@ -1,9 +1,8 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
 from xlens import HookedTransformer
-from xlens.pretrained import get_pretrained_model_config, get_pretrained_state_dict
-from xlens.utils import load_pretrained_weights
 
 pytest.importorskip("torch")
 
@@ -12,20 +11,31 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer  # noqa: E402
 
 
 @torch.no_grad()
-def test_get_pretrained_state_dict():
+def test_gpt2_computation():
     hf_model = GPT2LMHeadModel.from_pretrained("gpt2")
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     hf_model.eval()
-    cfg = get_pretrained_model_config("gpt2")
-    state_dict = get_pretrained_state_dict("gpt2", cfg)
-    model = HookedTransformer(cfg)
-    model = load_pretrained_weights(model, state_dict)
 
     hf_input = tokenizer("Hello, my dog is cute", return_tensors="pt")["input_ids"]
-    assert hf_input.shape == (1, 6)
+    hf_logits = hf_model(hf_input).logits
+
+    del hf_model
+    torch.cuda.empty_cache()
+
+    model = HookedTransformer.from_pretrained("gpt2")
+
     input = jnp.array(hf_input)
+    logits = model(input)
 
-    hf_output = hf_model(hf_input).logits
-    output = model(input)
+    print("Logits Difference: ", jnp.linalg.norm(logits - jnp.array(hf_logits)))
 
-    assert jnp.allclose(output, jnp.array(hf_output), atol=1e-4)
+    hf_probs = torch.nn.functional.softmax(hf_logits, dim=-1)
+    probs = jax.nn.softmax(logits, axis=-1)
+
+    print("Probs Difference: ", jnp.linalg.norm(probs - jnp.array(hf_probs)))
+
+    assert jnp.allclose(logits, jnp.array(hf_logits), atol=1e-4)
+
+
+if __name__ == "__main__":
+    test_gpt2_computation()

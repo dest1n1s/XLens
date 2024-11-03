@@ -18,4 +18,20 @@ XLens is designed for mechanistic interpretability of Transformer language model
 
 ## Examples
 
-TODO: Add examples
+Here are some basic examples to get you started with XLens.
+
+### Capturing Activations
+
+```python
+from xlens import HookedTransformer
+from transformers import AutoTokenizer
+
+# Load a pre-trained model and tokenizer
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
+model = HookedTransformer.from_pretrained("meta-llama/Llama-3.2-1B")
+
+# Capture the activations of the model
+inputs = tokenizer("Hello, world!", return_tensors="jax")
+logits, cache = model.run_with_cache(**inputs, hook_names=["blocks.0.hook_attn_out"])
+print(cache["blocks.0.hook_attn_out"].shape) # (1, 5, 2048)
+```

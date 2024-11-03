@@ -807,7 +807,6 @@ def convert_hf_model_config(model_name: str, **kwargs):
 
 def get_pretrained_model_config(
     model_name: str,
-    default_prepend_bos: bool = True,
     **kwargs,
 ):
     """Returns the pretrained model config as an HookedTransformerConfig object.
@@ -834,12 +833,8 @@ def get_pretrained_model_config(
         official_model_name = model_name
     else:
         official_model_name = get_official_model_name(model_name)
-    if official_model_name.startswith(NEED_REMOTE_CODE_MODELS) and not kwargs.get("trust_remote_code", False):
-        logging.warning(f"Loading model {official_model_name} requires setting trust_remote_code=True")
-        kwargs["trust_remote_code"] = True
     cfg_dict = convert_hf_model_config(official_model_name, **kwargs)
     cfg_dict["model_name"] = official_model_name.split("/")[-1]
-    cfg_dict["default_prepend_bos"] = default_prepend_bos
     cfg = HookedTransformerConfig.from_dict(cfg_dict)
     return cfg
 
