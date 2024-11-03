@@ -15,7 +15,7 @@ from transformers import AutoConfig
 from transformers.utils import SAFE_WEIGHTS_NAME, cached_file
 
 from xlens.config import HookedTransformerConfig
-from xlens.pretrained.convert_weight import convert_gpt2_weights, convert_llama_weights
+from xlens.pretrained.convert_weight import convert_gpt2_weights, convert_llama_weights, convert_qwen2_weights
 from xlens.utils import flatten_dict
 
 OFFICIAL_MODEL_NAMES = [
@@ -863,6 +863,8 @@ def get_pretrained_state_dict(
         state_dict = convert_gpt2_weights(params, cfg)
     elif cfg.original_architecture == "LlamaForCausalLM":
         state_dict = convert_llama_weights(params, cfg)
+    elif cfg.original_architecture == "Qwen2ForCausalLM":
+        state_dict = convert_qwen2_weights(params, cfg)
     else:
         raise ValueError(
             f"Loading weights from the architecture is not currently supported: {cfg.original_architecture}, generated from model name {cfg.model_name}. Feel free to open an issue on GitHub to request this feature."

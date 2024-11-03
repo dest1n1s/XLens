@@ -9,13 +9,15 @@ from xlens.utils import load_pretrained_weights
 pytest.importorskip("torch")
 
 import torch  # noqa: E402
-from transformers import AutoTokenizer, LlamaForCausalLM  # noqa: E402
+from transformers import AutoTokenizer, Qwen2ForCausalLM  # noqa: E402
 
 
 @torch.no_grad()
-def test_llama_computation():
-    hf_model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-3.2-1B", torch_dtype=torch.float32)
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
+def test_qwen2_computation():
+    hf_model = Qwen2ForCausalLM.from_pretrained(
+        "Qwen/Qwen2-0.5B", torch_dtype=torch.float32, attn_implementation="eager"
+    )
+    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
     hf_model.eval()
 
     hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
@@ -25,8 +27,8 @@ def test_llama_computation():
     del hf_model
     torch.cuda.empty_cache()
 
-    cfg = get_pretrained_model_config("meta-llama/Llama-3.2-1B")
-    state_dict = get_pretrained_state_dict("meta-llama/Llama-3.2-1B", cfg)
+    cfg = get_pretrained_model_config("Qwen/Qwen2-0.5B")
+    state_dict = get_pretrained_state_dict("Qwen/Qwen2-0.5B", cfg)
     model = HookedTransformer(cfg)
     model = load_pretrained_weights(model, state_dict)
 
@@ -44,4 +46,4 @@ def test_llama_computation():
 
 
 if __name__ == "__main__":
-    test_llama_computation()
+    test_qwen2_computation()

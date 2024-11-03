@@ -231,20 +231,11 @@ class Attention(eqx.Module):
             b: Float[jax.Array, "head_index d_head"],
         ) -> Float[jax.Array, "batch pos head_index d_head"]:
             """Linear layer for attention calculation."""
-            # return (
-            #     einops.einsum(
-            #         input,
-            #         w,
-            #         "batch pos d_model, head_index d_model d_head -> batch pos head_index d_head",
-            #     )
-            #     + b
-            # )
-            w = einops.rearrange(w, "head_index d_model d_head -> d_model (head_index d_head)")
             return (
-                einops.rearrange(
-                    input @ w,
-                    "batch pos (head_index d_head) -> batch pos head_index d_head",
-                    d_head=self.cfg.d_head,
+                einops.einsum(
+                    input,
+                    w,
+                    "batch pos d_model, head_index d_model d_head -> batch pos head_index d_head",
                 )
                 + b
             )
