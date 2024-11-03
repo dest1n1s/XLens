@@ -35,3 +35,15 @@ inputs = tokenizer("Hello, world!", return_tensors="jax")
 logits, cache = model.run_with_cache(**inputs, hook_names=["blocks.0.hook_attn_out"])
 print(cache["blocks.0.hook_attn_out"].shape) # (1, 5, 2048)
 ```
+
+## Supported Models
+
+XLens currently supports the following models:
+
+- [Llama](https://www.llama.com/)
+- [GPT-2](https://huggingface.co/gpt2)
+- [Pythia](https://github.com/EleutherAI/pythia)
+- [Qwen2](https://github.com/QwenLM/Qwen2.5)
+- [Mistral](https://mistral.ai/)
+
+Feel free to open an issue or pull request if you would like to see support for additional models.
