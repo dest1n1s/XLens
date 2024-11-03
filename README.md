@@ -12,7 +12,7 @@ XLens is designed for mechanistic interpretability of Transformer language model
 
 - **Support for Hooked Modules:** Interact with and modify internal model components seamlessly.
 - **Model Alignment with Hugging Face:** Outputs from XLens are consistent with Hugging Face's implementation, making it easier to integrate and compare results.
-- **Caching Mechanism:** Cache any internal activation for further analysis or manipulation during model inference. (Work in progress)
+- **Caching Mechanism:** Cache any internal activation for further analysis or manipulation during model inference.
 - **Full Type Annotations:** Comprehensive type annotations with generics and [jaxtyping](https://github.com/patrick-kidger/jaxtyping) for better code completion and type checking.
 - **Intuitive API:** Designed with ease of use in mind, facilitating quick experimentation and exploration.
 
