@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Optional, Self, Union
+from typing import Any, Callable, Optional, Union
 
 import equinox as eqx
 import jax
@@ -157,7 +157,7 @@ class HookedTransformer(eqx.Module):
         return out, cache
 
     @classmethod
-    def from_pretrained(cls, model_name: str, hf_model=None) -> Self:
+    def from_pretrained(cls, model_name: str, hf_model=None) -> "HookedTransformer":
         """Load a pretrained model.
 
         Args:
