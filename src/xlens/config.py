@@ -84,6 +84,9 @@ class HookedTransformerConfig:
         d_vocab_out (int, *optional*): The size of the output vocabulary. Defaults to -1, which means not set. If not
             set, will be equal to d_vocab. Mainly useful for algorithmic tasks
             where the input and output vocabularies may be different.
+        parallel_attn_mlp (bool): Whether to parallelize the attention and MLP
+            layers - a weird cursed thing done by GPT-J. Means that
+            mlp_out=MLP(ln1(resid_pre)) and resid_post=resid_pre+attn_out+mlp_out. Defaults to False.
         rotary_dim (int, *optional*): The dimensionality of the rotary
             embeddings, may be d_head in which case only the first rotary_dim
             dimensions of each head are rotated. Defaults to None, if
@@ -141,6 +144,7 @@ class HookedTransformerConfig:
     positional_embedding_type: str = "standard"
     final_rms: bool = False
     d_vocab_out: int = -1
+    parallel_attn_mlp: bool = False
     rotary_dim: Optional[int] = None
     rotary_base: int = 10000
     rotary_adjacent_pairs: bool = False

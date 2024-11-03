@@ -118,7 +118,7 @@ class TransformerBlock(eqx.Module):
             )
         )  # [batch, pos, d_model]
 
-        if not self.cfg.attn_only:
+        if not self.cfg.attn_only and not self.cfg.parallel_attn_mlp:
             assert (
                 self.mlp is not None and self.ln2 is not None and self.hook_resid_mid is not None
             ), "MLP, LayerNorm2 and hook_resid_mid must be defined if attn_only is False"
@@ -127,6 +127,12 @@ class TransformerBlock(eqx.Module):
             normalized_resid_mid = self.ln2(mlp_in)
             mlp_out = self.apply_mlp(normalized_resid_mid)
             resid_post = self.hook_resid_post(resid_mid + mlp_out)  # [batch, pos, d_model]
+        elif self.cfg.parallel_attn_mlp:
+            # Dumb thing done by GPT-J, both MLP and Attn read from resid_pre and write to resid_post, no resid_mid used.
+            # In GPT-J, LN1 and LN2 are tied, in GPT-NeoX they aren't.
+            normalized_resid_pre_2 = self.ln2(self.hook_mlp_in(resid_pre))
+            mlp_out = self.apply_mlp(normalized_resid_pre_2)
+            resid_post = self.hook_resid_post(resid_pre + attn_out + mlp_out)  # [batch, pos, d_model]
         else:
             resid_post = self.hook_resid_post(resid_pre + attn_out)  # [batch, pos, d_model]
 
