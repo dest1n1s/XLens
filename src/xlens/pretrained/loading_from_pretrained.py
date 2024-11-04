@@ -888,7 +888,7 @@ def get_pretrained_state_dict(
         kwargs["trust_remote_code"] = True
 
     if hf_model is not None:
-        params: dict[str, jax.Array] = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).values()}
+        params: dict[str, jax.Array] = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
     else:
         try:
             params = get_hf_pretrained_weight(official_model_name)
@@ -902,7 +902,7 @@ def get_pretrained_state_dict(
             from transformers import AutoModelForCausalLM
 
             hf_model = AutoModelForCausalLM.from_pretrained(official_model_name, token=huggingface_token, **kwargs)
-            params = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).values()}
+            params = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
 
     if cfg.original_architecture == "GPT2LMHeadModel":
         state_dict = convert_gpt2_weights(params, cfg)
