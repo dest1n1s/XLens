@@ -16,6 +16,14 @@ XLens is designed for mechanistic interpretability of Transformer language model
 - **Full Type Annotations:** Comprehensive type annotations with generics and [jaxtyping](https://github.com/patrick-kidger/jaxtyping) for better code completion and type checking.
 - **Intuitive API:** Designed with ease of use in mind, facilitating quick experimentation and exploration.
 
+## Installation
+
+XLens can be installed via pip:
+
+```bash
+pip install xlens
+```
+
 ## Examples
 
 Here are some basic examples to get you started with XLens.
@@ -31,7 +39,7 @@ tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
 model = HookedTransformer.from_pretrained("meta-llama/Llama-3.2-1B")
 
 # Capture the activations of the model
-inputs = tokenizer("Hello, world!", return_tensors="jax")
+inputs = tokenizer("Hello, world!", return_tensors="np")
 logits, cache = model.run_with_cache(**inputs, hook_names=["blocks.0.hook_attn_out"])
 print(cache["blocks.0.hook_attn_out"].shape) # (1, 5, 2048)
 ```
