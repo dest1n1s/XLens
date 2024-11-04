@@ -30,6 +30,7 @@ test = [
 ]
 torch = [
     "torch>=2.5.1",
+    "transformer-lens>=2.8.1",
 ]
 cuda12 = [
     "jax[cuda12]>=0.4.35",

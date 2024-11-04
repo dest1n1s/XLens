@@ -28,8 +28,8 @@ def convert_mistral_weights(params: dict[str, jax.Array], cfg: HookedTransformer
         W_K = einops.rearrange(W_K, "(n h) m->n m h", n=cfg.n_key_value_heads)
         W_V = einops.rearrange(W_V, "(n h) m->n m h", n=cfg.n_key_value_heads)
         state_dict[f"blocks.{l}.attn.W_Q"] = W_Q
-        state_dict[f"blocks.{l}.attn._W_K"] = W_K
-        state_dict[f"blocks.{l}.attn._W_V"] = W_V
+        state_dict[f"blocks.{l}.attn.W_K"] = W_K
+        state_dict[f"blocks.{l}.attn.W_V"] = W_V
 
         state_dict[f"blocks.{l}.attn.b_Q"] = jnp.zeros((cfg.n_heads, cfg.d_head))
         state_dict[f"blocks.{l}.attn.b_K"] = jnp.zeros((cfg.n_key_value_heads, cfg.d_head))
