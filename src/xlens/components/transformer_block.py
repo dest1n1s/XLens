@@ -52,7 +52,7 @@ class TransformerBlock(eqx.Module):
         elif cfg.normalization_type is None:
             # This should just be the identity.
             # We need to make this a lambda so we can call it on the config, just like the others
-            def normalization_layer(cfg):
+            def normalization_layer(cfg: HookedTransformerConfig):
                 def identity(x: jax.Array):
                     return x
 

@@ -18,7 +18,7 @@ def test_gpt2_computation():
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
     hf_model.eval()
 
-    hf_input = tokenizer("Hello, my dog is cute", return_tensors="pt")["input_ids"]
+    hf_input: torch.Tensor = tokenizer("Hello, my dog is cute", return_tensors="pt")["input_ids"]
     hf_logits = hf_model(hf_input).logits
 
     del hf_model

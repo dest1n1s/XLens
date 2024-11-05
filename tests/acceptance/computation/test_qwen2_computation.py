@@ -1,3 +1,5 @@
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -20,7 +22,7 @@ def test_qwen2_computation():
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
     hf_model.eval()
 
-    hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
+    hf_input: Any = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
     hf_output = hf_model(hf_input)
     hf_logits = hf_output.logits
 

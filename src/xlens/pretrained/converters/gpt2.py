@@ -41,7 +41,7 @@ class GPT2Converter(HuggingFaceModelConverterSingle):
             hf_weights = {f"transformer.{k}": v for k, v in hf_weights.items()} | {
                 "lm_head.weight": hf_weights["wte.weight"]
             }
-        state_dict = {}
+        state_dict: dict[str, jax.Array] = {}
 
         state_dict["embed.W_E"] = hf_weights["transformer.wte.weight"]
         assert state_dict["embed.W_E"].shape == (cfg.d_vocab, cfg.d_model)

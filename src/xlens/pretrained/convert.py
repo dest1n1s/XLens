@@ -3,6 +3,8 @@
 This module contains functions for loading pretrained models from the Hugging Face Hub.
 """
 
+from typing import Any
+
 import jax
 
 from xlens.config import HookedTransformerConfig
@@ -30,5 +32,5 @@ def get_pretrained_model_config(model_name: str) -> HookedTransformerConfig:
     return converter.get_pretrained_model_config(model_name)
 
 
-def get_pretrained_weights(cfg: HookedTransformerConfig, model_name: str, hf_model=None) -> dict[str, jax.Array]:
+def get_pretrained_weights(cfg: HookedTransformerConfig, model_name: str, hf_model: Any = None) -> dict[str, jax.Array]:
     return converter.get_pretrained_weights(cfg, model_name, hf_model=hf_model)

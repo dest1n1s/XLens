@@ -93,7 +93,7 @@ class GPTNeoXConverter(HuggingFaceModelConverterSingle):
         if "embed_out.weight" not in hf_weights:
             hf_weights = {**hf_weights, "embed_out.weight": hf_weights["gpt_neox.embed_in.weight"]}
 
-        state_dict = {}
+        state_dict: dict[str, jax.Array] = {}
 
         state_dict["embed.W_E"] = hf_weights["gpt_neox.embed_in.weight"]
 

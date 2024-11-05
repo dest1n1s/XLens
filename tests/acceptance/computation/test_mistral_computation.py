@@ -20,7 +20,7 @@ def test_mistral_computation():
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
     hf_model.eval()
 
-    hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
+    hf_input: torch.Tensor = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
     hf_output = hf_model(hf_input, output_hidden_states=True)
     hf_logits = hf_output.logits
     hf_hidden_states = hf_output.hidden_states

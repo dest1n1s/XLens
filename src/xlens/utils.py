@@ -1,4 +1,4 @@
-from typing import Any, Hashable, TypeVar
+from typing import Any, Hashable, TypeVar, cast
 
 import jax
 
@@ -6,7 +6,7 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 
-def transformer_lens_compatible_path_str(key_path: jax.tree_util.KeyPath) -> str:
+def transformer_lens_compatible_path_str(key_path: tuple[Hashable, ...]) -> str:
     def _transform_key_entry(entry: Hashable) -> str:
         if isinstance(entry, jax.tree_util.SequenceKey):
             return str(entry.idx)
@@ -40,8 +40,9 @@ def get_nested_component(
         tree,
         is_leaf=None if component_type is None else lambda x: isinstance(x, component_type),
     )
+    flattened = cast(list[tuple[tuple[Hashable, ...], Any]], flattened)
 
-    def filter_path(key_path: jax.tree_util.KeyPath):
+    def filter_path(key_path: tuple[Hashable, ...]):
         return path in [jax.tree_util.keystr(key_path)] + (
             [transformer_lens_compatible_path_str(key_path)] if transformer_lens_compatible else []
         )
@@ -72,8 +73,9 @@ def set_nested_component(
         tree,
         is_leaf=None if component_type is None else lambda x: isinstance(x, component_type),
     )
+    flattened = cast(list[tuple[tuple[Hashable, ...], Any]], flattened)
 
-    def filter_path(key_path: jax.tree_util.KeyPath):
+    def filter_path(key_path: tuple[Hashable, ...]):
         return path in [jax.tree_util.keystr(key_path)] + (
             [transformer_lens_compatible_path_str(key_path)] if transformer_lens_compatible else []
         )
@@ -97,6 +99,7 @@ def load_pretrained_weights(
     """
 
     flattened, tree_def = jax.tree_util.tree_flatten_with_path(model)
+    flattened = cast(list[tuple[tuple[Hashable, ...], Any]], flattened)
 
     res = [
         pretrained_weights.get(transformer_lens_compatible_path_str(key_path), x)
@@ -108,8 +111,8 @@ def load_pretrained_weights(
     return jax.tree_util.tree_unflatten(tree_def, res)
 
 
-def flatten_dict(d, parent_key="", sep="."):
-    items = []
+def flatten_dict(d: dict[str, Any], parent_key: str = "", sep: str = ".") -> dict[str, Any]:
+    items: list[tuple[str, Any]] = []
     for k, v in d.items():
         new_key = parent_key + sep + k if parent_key else k
         if isinstance(v, dict):

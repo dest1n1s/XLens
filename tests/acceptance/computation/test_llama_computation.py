@@ -18,7 +18,7 @@ def test_llama_computation():
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B")
     hf_model.eval()
 
-    hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
+    hf_input: torch.Tensor = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
     hf_output = hf_model(hf_input)
     hf_logits = hf_output.logits
 

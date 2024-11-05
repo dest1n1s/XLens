@@ -2,7 +2,7 @@ import functools
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
@@ -21,7 +21,7 @@ class ModelConverter(ABC):
         pass
 
     @abstractmethod
-    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs) -> HookedTransformerConfig:
+    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs: Any) -> HookedTransformerConfig:
         """Get the model configuration for the given model name.
 
         Args:
@@ -35,7 +35,7 @@ class ModelConverter(ABC):
 
     @abstractmethod
     def get_pretrained_weights(
-        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs
+        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs: Any
     ) -> dict[str, jax.Array]:
         """Get the pretrained weights for the given model.
 
@@ -71,7 +71,7 @@ class HuggingFaceModelConverterSingle(ModelConverter):
         if os.path.isdir(model_name_or_path):
             if os.path.exists(os.path.join(model_name_or_path, "config.json")):
                 hf_cfg = AutoConfig.from_pretrained(model_name_or_path, token=True)
-                architecture = hf_cfg.architectures[0]
+                architecture: str = hf_cfg.architectures[0]
                 return architecture == self.model_architecture
             else:
                 return False
@@ -90,7 +90,7 @@ class HuggingFaceModelConverterSingle(ModelConverter):
         """
         pass
 
-    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs) -> HookedTransformerConfig:
+    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs: Any) -> HookedTransformerConfig:
         model_name_or_path = (
             model_name_or_path if os.path.isdir(model_name_or_path) else self.rev_alias_map[model_name_or_path]
         )
@@ -110,7 +110,7 @@ class HuggingFaceModelConverterSingle(ModelConverter):
         pass
 
     def get_pretrained_weights(
-        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs
+        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs: Any
     ) -> dict[str, jax.Array]:
         if os.path.isdir(model_name_or_path):
             if os.path.isfile(os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)):
@@ -128,7 +128,7 @@ class HuggingFaceModelConverterSingle(ModelConverter):
             from transformers import AutoModelForCausalLM
 
             hf_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, token=True, **kwargs)
-            params = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
+            params: dict[str, jax.Array] = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
         else:
             params = safe_load_file(resolved_archive_file)
         return self.convert_hf_weights(params, cfg)
@@ -175,14 +175,14 @@ class HuggingFaceModelConverter(ModelConverter):
     def can_convert(self, model_name_or_path: str) -> bool:
         if os.path.isdir(model_name_or_path):
             if os.path.exists(os.path.join(model_name_or_path, "config.json")):
-                architecture = AutoConfig.from_pretrained(model_name_or_path, token=True).architectures[0]
+                architecture: Any = AutoConfig.from_pretrained(model_name_or_path, token=True).architectures[0]
                 return architecture in self.model_architectures
             else:
                 return False
         else:
             return model_name_or_path in self.rev_alias_map
 
-    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs) -> HookedTransformerConfig:
+    def get_pretrained_model_config(self, model_name_or_path: str, **kwargs: Any) -> HookedTransformerConfig:
         if os.path.isdir(model_name_or_path):
             hf_cfg = AutoConfig.from_pretrained(model_name_or_path, token=True)
             architecture = hf_cfg.architectures[0]
@@ -194,7 +194,7 @@ class HuggingFaceModelConverter(ModelConverter):
             return self.name_converter_map[model_name_or_path].get_pretrained_model_config(model_name_or_path, **kwargs)
 
     def get_pretrained_weights(
-        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs
+        self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs: Any
     ) -> dict[str, jax.Array]:
         if cfg.original_architecture in self.architecture_converter_map:
             return self.architecture_converter_map[cfg.original_architecture].get_pretrained_weights(

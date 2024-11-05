@@ -323,7 +323,7 @@ class Attention(eqx.Module):
         rotary_dim: int,
         n_ctx: int,
         base: int = 10000,
-        dtype=jnp.float32,
+        dtype: jnp.dtype = jnp.float32,  # type: ignore
         use_NTK_by_parts_rope: bool = False,
         NTK_by_parts_factor: float = 8.0,
         NTK_by_parts_low_freq_factor: float = 1.0,
@@ -368,7 +368,7 @@ class Attention(eqx.Module):
     def apply_rotary(
         self,
         x: Float[jax.Array, "batch pos head_index d_head"],
-        past_kv_pos_offset=0,
+        past_kv_pos_offset: int = 0,
         attention_mask: Optional[jnp.ndarray] = None,
         rotary_dim: int = 64,
     ) -> jnp.ndarray:

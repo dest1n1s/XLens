@@ -20,7 +20,7 @@ def test_pythia_computation():
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-70m")
     hf_model.eval()
 
-    hf_input = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
+    hf_input: torch.Tensor = tokenizer("Hello, my dog is cute!", return_tensors="pt")["input_ids"]
     hf_output = hf_model(hf_input)
     hf_logits = hf_output.logits
 

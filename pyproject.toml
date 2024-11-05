@@ -132,5 +132,10 @@ docstring-code-line-length = "dynamic"
 
 
 [tool.pyright]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 reportUnknownMemberType = false
+reportUntypedFunctionDecorator = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportMissingTypeStubs = false
+reportConstantRedefinition = false

@@ -90,7 +90,7 @@ class HookedTransformer(eqx.Module):
         pos_embed = self.hook_pos_embed(self.pos_embed(tokens, 0, attention_mask))  # [batch, pos, d_model]
         residual = embed + pos_embed
 
-        for i, block in list(zip(range(self.cfg.n_layers), self.blocks)):
+        for _, block in list(zip(range(self.cfg.n_layers), self.blocks)):
             # Note that each block includes skip connections, so we don't need
             # residual + block(residual)
             residual = block(
@@ -157,7 +157,7 @@ class HookedTransformer(eqx.Module):
         return out, cache
 
     @classmethod
-    def from_pretrained(cls, model_name: str, hf_model=None) -> "HookedTransformer":
+    def from_pretrained(cls, model_name: str, hf_model: Any = None) -> "HookedTransformer":
         """Load a pretrained model.
 
         Args:

@@ -56,7 +56,7 @@ class MistralConverter(HuggingFaceModelConverterSingle):
             hf_weights = {f"model.{k}": v for k, v in hf_weights.items()}
         if "lm_head.weight" not in hf_weights:
             hf_weights = {**hf_weights, "lm_head.weight": hf_weights["model.embed_tokens.weight"]}
-        state_dict = {}
+        state_dict: dict[str, jax.Array] = {}
 
         state_dict["embed.W_E"] = hf_weights["model.embed_tokens.weight"]
 

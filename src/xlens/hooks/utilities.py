@@ -42,7 +42,7 @@ def with_cache(tree: U, hook_names: list[str] = []) -> tuple[U, dict[str, Any]]:
     cache = {}
 
     def hook_fn(name: str):
-        def _hook_fn(x):
+        def _hook_fn(x: Any):
             cache[name] = x
             return x
 

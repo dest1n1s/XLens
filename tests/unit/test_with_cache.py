@@ -1,4 +1,5 @@
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 
 from xlens import HookPoint, with_cache
@@ -7,7 +8,7 @@ from xlens import HookPoint, with_cache
 class ModuleA(eqx.Module):
     hook_mid: HookPoint
 
-    def __call__(self, x):
+    def __call__(self, x: jax.Array) -> jax.Array:
         return self.hook_mid(x * 2) * 2
 
 

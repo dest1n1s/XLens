@@ -63,7 +63,7 @@ class LlamaConverter(HuggingFaceModelConverterSingle):
 
     def convert_hf_model_config(self, hf_cfg: Any) -> HookedTransformerConfig:
         if hasattr(hf_cfg, "rope_scaling") and hf_cfg.rope_scaling is not None:
-            ntk_cfg = {
+            ntk_cfg: dict[str, Any] = {
                 "use_NTK_by_parts_rope": True,
                 "NTK_by_parts_low_freq_factor": hf_cfg.rope_scaling["low_freq_factor"],
                 "NTK_by_parts_high_freq_factor": hf_cfg.rope_scaling["high_freq_factor"],
@@ -102,7 +102,7 @@ class LlamaConverter(HuggingFaceModelConverterSingle):
             hf_weights = {f"model.{k}": v for k, v in hf_weights.items()}
         if "lm_head.weight" not in hf_weights:
             hf_weights = {**hf_weights, "lm_head.weight": hf_weights["model.embed_tokens.weight"]}
-        state_dict = {}
+        state_dict: dict[str, jax.Array] = {}
 
         state_dict["embed.W_E"] = hf_weights["model.embed_tokens.weight"]
 
