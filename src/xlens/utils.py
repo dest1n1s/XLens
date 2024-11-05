@@ -1,4 +1,4 @@
-from typing import TypeVar
+from typing import Any, Hashable, TypeVar
 
 import jax
 
@@ -7,7 +7,7 @@ U = TypeVar("U")
 
 
 def transformer_lens_compatible_path_str(key_path: jax.tree_util.KeyPath) -> str:
-    def _transform_key_entry(entry: jax.tree_util.KeyEntry) -> str:
+    def _transform_key_entry(entry: Hashable) -> str:
         if isinstance(entry, jax.tree_util.SequenceKey):
             return str(entry.idx)
         if isinstance(entry, jax.tree_util.GetAttrKey):
@@ -22,7 +22,7 @@ def transformer_lens_compatible_path_str(key_path: jax.tree_util.KeyPath) -> str
 
 
 def get_nested_component(
-    tree: U,
+    tree: Any,
     path: str,
     component_type: type[T] | None = None,
     transformer_lens_compatible: bool = True,

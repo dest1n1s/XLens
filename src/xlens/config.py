@@ -168,7 +168,7 @@ class HookedTransformerConfig:
         if not self.attn_only:
             if self.d_mlp is None:
                 # For some reason everyone hard codes in this hyper-parameter!
-                self.d_mlp: int = self.d_model * 4
+                self.d_mlp = self.d_model * 4
             assert self.act_fn is not None, "act_fn must be specified for non-attn-only models"
             assert self.act_fn in SUPPORTED_ACTIVATIONS, f"act_fn={self.act_fn} must be one of {SUPPORTED_ACTIVATIONS}"
 

@@ -41,10 +41,7 @@ class TransformerBlock(eqx.Module):
         self.layer_id = block_index
 
         if cfg.normalization_type == "LN":
-            normalization_layer: Callable[
-                [HookedTransformerConfig],
-                Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]],
-            ] = LayerNorm
+            normalization_layer = LayerNorm
         elif cfg.normalization_type == "LNPre":
             # We've folded in LayerNorm weights, so just need the center + scale parts
             normalization_layer = LayerNormPre

@@ -9,6 +9,8 @@ pytest.importorskip("torch")
 import torch  # noqa: E402
 from transformers import AutoTokenizer, Qwen2ForCausalLM  # noqa: E402
 
+jax.config.update("jax_default_matmul_precision", "highest")
+
 
 @torch.no_grad()
 def test_qwen2_computation():

@@ -21,7 +21,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.13.0",
+    "basedpyright>=1.20.0",
     "pre-commit>=4.0.1",
     "ruff>=0.7.1",
 ]
@@ -131,3 +131,6 @@ docstring-code-format = false
 docstring-code-line-length = "dynamic"
 
 
+[tool.pyright]
+typeCheckingMode = "standard"
+reportUnknownMemberType = false

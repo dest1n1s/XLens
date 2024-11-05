@@ -7,7 +7,7 @@ from jaxtyping import Float, Int
 
 from xlens.components import Embed, LayerNorm, LayerNormPre, PosEmbed, RMSNorm, RMSNormPre, TransformerBlock, Unembed
 from xlens.hooks import with_cache, with_hooks
-from xlens.pretrained.loading_from_pretrained import get_pretrained_model_config, get_pretrained_state_dict
+from xlens.pretrained.convert import get_pretrained_model_config, get_pretrained_weights
 from xlens.utils import load_pretrained_weights
 
 from .config import HookedTransformerConfig
@@ -167,7 +167,7 @@ class HookedTransformer(eqx.Module):
         """
 
         cfg = get_pretrained_model_config(model_name)
-        state_dict = get_pretrained_state_dict(model_name, cfg, hf_model=hf_model)
+        weights = get_pretrained_weights(cfg, model_name, hf_model=hf_model)
         model = HookedTransformer(cfg)
-        model = load_pretrained_weights(model, state_dict)
+        model = load_pretrained_weights(model, weights)
         return model

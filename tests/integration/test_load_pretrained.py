@@ -1,13 +1,13 @@
 import pytest
 
 from xlens import HookedTransformer
-from xlens.pretrained import get_pretrained_model_config, get_pretrained_state_dict
+from xlens.pretrained import get_pretrained_model_config, get_pretrained_weights
 
 
-def test_get_pretrained_state_dict():
+def test_get_pretrained_weights():
     cfg = get_pretrained_model_config("gpt2")
-    state_dict = get_pretrained_state_dict("gpt2", cfg)
-    assert "unembed.W_U" in state_dict
+    weights = get_pretrained_weights(cfg, "gpt2")
+    assert "unembed.W_U" in weights
 
 
 def test_from_pretrained():

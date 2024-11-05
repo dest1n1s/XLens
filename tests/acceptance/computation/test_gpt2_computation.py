@@ -9,6 +9,8 @@ pytest.importorskip("torch")
 import torch  # noqa: E402
 from transformers import GPT2LMHeadModel, GPT2Tokenizer  # noqa: E402
 
+jax.config.update("jax_default_matmul_precision", "highest")
+
 
 @torch.no_grad()
 def test_gpt2_computation():
