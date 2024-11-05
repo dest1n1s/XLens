@@ -74,9 +74,6 @@ exclude = [
     "dist",
     "node_modules",
     "site-packages",
-    "venv",
-    "TransformerLens",
-    "ui"
 ]
 
 line-length = 120
@@ -135,6 +132,7 @@ docstring-code-line-length = "dynamic"
 
 
 [tool.pyright]
+ignore = ["tests"]
 typeCheckingMode = "strict"
 reportUnknownMemberType = false
 reportUntypedFunctionDecorator = false
