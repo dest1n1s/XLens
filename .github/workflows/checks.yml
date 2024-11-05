@@ -54,7 +54,7 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
       - name: Type check
-        run: uv run --group torch pyright
+        run: uv run --group torch basedpyright
 
   ruff:
     runs-on: ubuntu-latest

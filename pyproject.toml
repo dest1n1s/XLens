@@ -38,6 +38,9 @@ cuda12 = [
 flax = [
     "flax>=0.10.1",
 ]
+metal = [
+    "jax-metal>=0.1.1",
+]
 
 [tool.uv.workspace]
 members = ["xlens"]

@@ -92,9 +92,30 @@ class Qwen2Converter(HuggingFaceModelConverterSingle):
             state_dict[f"blocks.{l}.attn.W_K"] = W_K
             state_dict[f"blocks.{l}.attn.W_V"] = W_V
 
-            state_dict[f"blocks.{l}.attn.b_Q"] = jnp.zeros((cfg.n_heads, cfg.d_head))
-            state_dict[f"blocks.{l}.attn.b_K"] = jnp.zeros((cfg.n_key_value_heads, cfg.d_head))
-            state_dict[f"blocks.{l}.attn.b_V"] = jnp.zeros((cfg.n_key_value_heads, cfg.d_head))
+            b_Q = hf_weights[f"model.layers.{l}.self_attn.q_proj.bias"]
+            b_Q = einops.rearrange(
+                b_Q,
+                "(n_head d_head) -> n_head d_head",
+                n_head=cfg.n_heads,
+            )
+
+            b_K = hf_weights[f"model.layers.{l}.self_attn.k_proj.bias"]
+            b_K = einops.rearrange(
+                b_K,
+                "(n_head d_head) -> n_head d_head",
+                n_head=cfg.n_key_value_heads,
+            )
+
+            b_V = hf_weights[f"model.layers.{l}.self_attn.v_proj.bias"]
+            b_V = einops.rearrange(
+                b_V,
+                "(n_head d_head) -> n_head d_head",
+                n_head=cfg.n_key_value_heads,
+            )
+
+            state_dict[f"blocks.{l}.attn.b_Q"] = b_Q
+            state_dict[f"blocks.{l}.attn.b_K"] = b_K
+            state_dict[f"blocks.{l}.attn.b_V"] = b_V
 
             W_O = hf_weights[f"model.layers.{l}.self_attn.o_proj.weight"]
             W_O = einops.rearrange(W_O, "m (n h)->n h m", n=cfg.n_heads)
