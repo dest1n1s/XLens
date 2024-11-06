@@ -122,6 +122,9 @@ class HuggingFaceModelConverterSingle(ModelConverter):
     def get_pretrained_weights(
         self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs: Any
     ) -> dict[str, jax.Array]:
+        model_name_or_path = (
+            model_name_or_path if os.path.isdir(model_name_or_path) else self.rev_alias_map[model_name_or_path]
+        )
         if os.path.isdir(model_name_or_path):
             if os.path.isfile(os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)):
                 resolved_archive_files = [os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)]
