@@ -1,14 +1,20 @@
 import functools
+import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import jax
 import jax.numpy as jnp
 from safetensors.flax import load_file as safe_load_file
 from transformers import AutoConfig
-from transformers.utils import SAFE_WEIGHTS_NAME, cached_file
+from transformers.utils import (
+    SAFE_WEIGHTS_INDEX_NAME,
+    SAFE_WEIGHTS_NAME,
+    cached_file,
+    has_file,
+)
 
 from xlens.config import HookedTransformerConfig
 from xlens.utils import flatten_dict
@@ -109,19 +115,46 @@ class HuggingFaceModelConverterSingle(ModelConverter):
         """
         pass
 
+    def _get_safe_weights_files(self, safe_weight_index: Any) -> list[str]:
+        weight_map = safe_weight_index["weight_map"]
+        return [weight_map[key] for key in weight_map]
+
     def get_pretrained_weights(
         self, cfg: HookedTransformerConfig, model_name_or_path: str, **kwargs: Any
     ) -> dict[str, jax.Array]:
         if os.path.isdir(model_name_or_path):
             if os.path.isfile(os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)):
-                resolved_archive_file = os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)
+                resolved_archive_files = [os.path.join(model_name_or_path, SAFE_WEIGHTS_NAME)]
+            elif os.path.isfile(os.path.join(model_name_or_path, SAFE_WEIGHTS_INDEX_NAME)):
+                with open(os.path.join(model_name_or_path, SAFE_WEIGHTS_INDEX_NAME), "r") as f:
+                    safe_weight_index = json.load(f)
+                resolved_archive_files = [
+                    os.path.join(model_name_or_path, file_name)
+                    for file_name in self._get_safe_weights_files(safe_weight_index)
+                ]
             else:
                 raise EnvironmentError(
                     f"Error: Unable to find file {SAFE_WEIGHTS_NAME} in directory {model_name_or_path}."
                 )
         else:
-            resolved_archive_file = cached_file(model_name_or_path, SAFE_WEIGHTS_NAME, token=True)
-        if resolved_archive_file is None:
+            if has_file(model_name_or_path, SAFE_WEIGHTS_NAME):
+                resolved_archive_files = [cached_file(model_name_or_path, SAFE_WEIGHTS_NAME, token=True)]
+                assert all(resolved_archive_files)
+                resolved_archive_files = cast(list[str], resolved_archive_files)
+            elif has_file(model_name_or_path, SAFE_WEIGHTS_INDEX_NAME):
+                safe_weights_index_file = cached_file(model_name_or_path, SAFE_WEIGHTS_INDEX_NAME, token=True)
+                assert safe_weights_index_file is not None
+                with open(safe_weights_index_file, "r") as f:
+                    safe_weight_index = json.load(f)
+                resolved_archive_files = [
+                    cached_file(model_name_or_path, file_name, token=True)
+                    for file_name in self._get_safe_weights_files(safe_weight_index)
+                ]
+                assert all(resolved_archive_files)
+                resolved_archive_files = cast(list[str], resolved_archive_files)
+            else:
+                resolved_archive_files = None
+        if resolved_archive_files is None:
             logging.warning(
                 "Cannot load weights from non-sharded .safetensors file. Attempting to load using transformers."
             )
@@ -130,7 +163,9 @@ class HuggingFaceModelConverterSingle(ModelConverter):
             hf_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, token=True, **kwargs)
             params: dict[str, jax.Array] = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
         else:
-            params = safe_load_file(resolved_archive_file)
+            params = {}
+            for resolved_archive_file in resolved_archive_files:
+                params.update(safe_load_file(resolved_archive_file))
         return self.convert_hf_weights(params, cfg)
 
 
