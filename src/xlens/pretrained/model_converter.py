@@ -153,6 +153,7 @@ class HuggingFaceModelConverterSingle(ModelConverter):
                     cached_file(model_name_or_path, file_name, token=True)
                     for file_name in self._get_safe_weights_files(safe_weight_index)
                 ]
+                resolved_archive_files = list(set(resolved_archive_files))
                 assert all(resolved_archive_files)
                 resolved_archive_files = cast(list[str], resolved_archive_files)
             else:
