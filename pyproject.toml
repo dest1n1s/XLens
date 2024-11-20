@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
     "einops>=0.8.0",
-    "equinox>=0.11.8",
+    "flax>=0.10.1",
     "jax>=0.4.35",
     "optax>=0.2.3",
     "protobuf>=5.28.3",
@@ -24,8 +24,6 @@ dev = [
     "basedpyright>=1.20.0",
     "pre-commit>=4.0.1",
     "ruff>=0.7.1",
-]
-test = [
     "pytest>=8.3.3",
 ]
 torch = [
@@ -34,9 +32,6 @@ torch = [
 ]
 cuda12 = [
     "jax[cuda12]>=0.4.35",
-]
-flax = [
-    "flax>=0.10.1",
 ]
 metal = [
     "jax-metal>=0.1.1",

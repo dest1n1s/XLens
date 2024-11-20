@@ -1,6 +1,6 @@
 from typing import Callable, Optional, Union
 
-import equinox as eqx
+import flax.nnx as nnx
 import jax
 from jaxtyping import Float, Int
 
@@ -13,10 +13,10 @@ from xlens.hooks.hook_point import HookPoint
 LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
 
 
-class TransformerBlock(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class TransformerBlock(nnx.Module):
+    cfg: HookedTransformerConfig
 
-    layer_id: Optional[int] = eqx.field(static=True)
+    layer_id: Optional[int]
 
     ln1: Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]
     ln2: Optional[Callable[[Float[jax.Array, "batch pos d_model"]], Float[jax.Array, "batch pos d_model"]]]

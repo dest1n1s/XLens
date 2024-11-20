@@ -1,7 +1,7 @@
 from typing import Optional, Tuple, Union
 
 import einops
-import equinox as eqx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float, Int
@@ -11,26 +11,26 @@ from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
 
 
-class Attention(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class Attention(nnx.Module):
+    cfg: HookedTransformerConfig
 
-    attn_type: str = eqx.field(static=True)
-    mask: Int[jax.Array, "pos pos"]
-    layer_id: Optional[int] = eqx.field(static=True)
-    attn_scale: float = eqx.field(static=True)
-    repeat_kv_heads: Optional[int] = eqx.field(static=True)
-    rotary_sin: Optional[Float[jax.Array, "n_ctx rotary_dim"]]
-    rotary_cos: Optional[Float[jax.Array, "n_ctx rotary_dim"]]
+    attn_type: str
+    mask: nnx.Variable[Int[jax.Array, "pos pos"]]
+    layer_id: Optional[int]
+    attn_scale: float
+    repeat_kv_heads: Optional[int]
+    rotary_sin: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
+    rotary_cos: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
 
-    W_Q: Float[jax.Array, "n_heads d_model d_head"]
-    W_K: Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]
-    W_V: Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]
-    W_O: Float[jax.Array, "n_heads d_head d_model"]
+    W_Q: nnx.Param[Float[jax.Array, "n_heads d_model d_head"]]
+    W_K: nnx.Param[Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]]
+    W_V: nnx.Param[Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]]
+    W_O: nnx.Param[Float[jax.Array, "n_heads d_head d_model"]]
 
-    b_Q: Float[jax.Array, "n_heads d_head"]
-    b_K: Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]
-    b_V: Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]
-    b_O: Float[jax.Array, " d_model"]
+    b_Q: nnx.Param[Float[jax.Array, "n_heads d_head"]]
+    b_K: nnx.Param[Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]]
+    b_V: nnx.Param[Float[jax.Array, "n_heads d_head"] | Float[jax.Array, "n_key_value_heads d_head"]]
+    b_O: nnx.Param[Float[jax.Array, " d_model"]]
 
     hook_k: HookPoint
     hook_q: HookPoint
@@ -61,23 +61,23 @@ class Attention(eqx.Module):
         """
         self.cfg = cfg
 
-        self.W_Q = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
-        self.W_O = jnp.zeros((self.cfg.n_heads, self.cfg.d_head, self.cfg.d_model))
+        self.W_Q = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head)))
+        self.W_O = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_head, self.cfg.d_model)))
         if self.cfg.n_key_value_heads is None:
-            self.W_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
-            self.W_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head))
+            self.W_K = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head)))
+            self.W_V = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_model, self.cfg.d_head)))
         else:
-            self.W_K = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head))
-            self.W_V = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head))
+            self.W_K = nnx.Param(jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head)))
+            self.W_V = nnx.Param(jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_model, self.cfg.d_head)))
 
-        self.b_Q = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
-        self.b_O = jnp.zeros((self.cfg.d_model,))
+        self.b_Q = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_head)))
+        self.b_O = nnx.Param(jnp.zeros((self.cfg.d_model,)))
         if self.cfg.n_key_value_heads is None:
-            self.b_K = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
-            self.b_V = jnp.zeros((self.cfg.n_heads, self.cfg.d_head))
+            self.b_K = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_head)))
+            self.b_V = nnx.Param(jnp.zeros((self.cfg.n_heads, self.cfg.d_head)))
         else:
-            self.b_K = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head))
-            self.b_V = jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head))
+            self.b_K = nnx.Param(jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head)))
+            self.b_V = nnx.Param(jnp.zeros((self.cfg.n_key_value_heads, self.cfg.d_head)))
 
         self.repeat_kv_heads = (
             self.cfg.n_heads // self.cfg.n_key_value_heads if self.cfg.n_key_value_heads is not None else None
@@ -89,13 +89,13 @@ class Attention(eqx.Module):
         causal_mask = jnp.tril(jnp.ones((self.cfg.n_ctx, self.cfg.n_ctx)).astype(bool))
         if self.attn_type == "global":
             # For global attention, this is a lower triangular matrix - key <= query
-            self.mask = causal_mask
+            self.mask = nnx.Variable(causal_mask)
         elif self.attn_type == "local":
             # For local, this is banded, query - window_size < key <= query
             if not isinstance(self.cfg.window_size, int):
                 raise ValueError("Window size must be an integer for local attention")
             mask = jnp.triu(causal_mask, 1 - self.cfg.window_size)
-            self.mask = jax.lax.stop_gradient(mask)
+            self.mask = nnx.Variable(mask)
         else:
             raise ValueError(f"Invalid attention type: {self.attn_type}")
 
@@ -135,8 +135,8 @@ class Attention(eqx.Module):
                 NTK_by_parts_high_freq_factor=self.cfg.NTK_by_parts_high_freq_factor,
                 rotary_adjacent_pairs=self.cfg.rotary_adjacent_pairs,
             )
-            self.rotary_sin = jax.lax.stop_gradient(rotary_sin)
-            self.rotary_cos = jax.lax.stop_gradient(rotary_cos)
+            self.rotary_sin = nnx.Variable(rotary_sin)
+            self.rotary_cos = nnx.Variable(rotary_cos)
         else:
             self.hook_rot_k = None
             self.hook_rot_q = None
@@ -205,7 +205,7 @@ class Attention(eqx.Module):
         pattern = self.hook_pattern(pattern)  # [batch, head_index, query_pos, key_pos]
         z = self.calculate_z_scores(v, pattern)  # [batch, pos, head_index, d_head]
         w = einops.rearrange(
-            self.W_O,
+            self.W_O.value,
             "head_index d_head d_model -> d_model head_index d_head",
         )
         result = self.hook_result(
@@ -245,9 +245,9 @@ class Attention(eqx.Module):
                 + b
             )
 
-        q = self.hook_q(attn_fn(query_input, self.W_Q, self.b_Q))
-        k = self.hook_k(attn_fn(key_input, self.W_K, self.b_K))
-        v = self.hook_v(attn_fn(value_input, self.W_V, self.b_V))
+        q = self.hook_q(attn_fn(query_input, self.W_Q.value, self.b_Q.value))
+        k = self.hook_k(attn_fn(key_input, self.W_K.value, self.b_K.value))
+        v = self.hook_v(attn_fn(value_input, self.W_V.value, self.b_V.value))
 
         return q, k, v
 

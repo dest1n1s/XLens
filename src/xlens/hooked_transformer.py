@@ -1,11 +1,20 @@
 import logging
 from typing import Any, Callable, Optional, Union
 
-import equinox as eqx
+import flax.nnx as nnx
 import jax
 from jaxtyping import Float, Int
 
-from xlens.components import Embed, LayerNorm, LayerNormPre, PosEmbed, RMSNorm, RMSNormPre, TransformerBlock, Unembed
+from xlens.components import (
+    Embed,
+    LayerNorm,
+    LayerNormPre,
+    PosEmbed,
+    RMSNorm,
+    RMSNormPre,
+    TransformerBlock,
+    Unembed,
+)
 from xlens.hooks import with_cache, with_hooks
 from xlens.pretrained.convert import get_pretrained_model_config, get_pretrained_weights
 from xlens.utils import load_pretrained_weights
@@ -16,8 +25,8 @@ from .hooks import HookPoint
 LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
 
 
-class HookedTransformer(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class HookedTransformer(nnx.Module):
+    cfg: HookedTransformerConfig
 
     embed: Embed
     pos_embed: PosEmbed

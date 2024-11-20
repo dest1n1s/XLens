@@ -7,6 +7,7 @@ from typing import Any, Optional, cast
 
 import jax
 import jax.numpy as jnp
+from flax.traverse_util import flatten_dict
 from safetensors.flax import load_file as safe_load_file
 from transformers import AutoConfig
 from transformers.utils import (
@@ -17,7 +18,6 @@ from transformers.utils import (
 )
 
 from xlens.config import HookedTransformerConfig
-from xlens.utils import flatten_dict
 
 
 class ModelConverter(ABC):
@@ -165,7 +165,9 @@ class HuggingFaceModelConverterSingle(ModelConverter):
             from transformers import AutoModelForCausalLM
 
             hf_model = AutoModelForCausalLM.from_pretrained(model_name_or_path, token=True, **kwargs)
-            params: dict[str, jax.Array] = {k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict()).items()}
+            params: dict[str, jax.Array] = {
+                k: jnp.array(v) for k, v in flatten_dict(hf_model.state_dict(), sep=".").items()
+            }
         else:
             params = {}
             for resolved_archive_file in resolved_archive_files:

@@ -5,7 +5,7 @@ This module contains all the component :class:`LayerNorm`.
 
 from typing import Optional, Union
 
-import equinox as eqx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float
@@ -14,12 +14,12 @@ from xlens.config import HookedTransformerConfig
 from xlens.hooks import HookPoint
 
 
-class LayerNorm(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
-    length: int = eqx.field(static=True)
+class LayerNorm(nnx.Module):
+    cfg: HookedTransformerConfig
+    length: int
 
-    w: Float[jax.Array, " length"]
-    b: Float[jax.Array, " length"]
+    w: nnx.Param[Float[jax.Array, " length"]]
+    b: nnx.Param[Float[jax.Array, " length"]]
 
     hook_scale: HookPoint
     hook_normalized: HookPoint
@@ -36,8 +36,8 @@ class LayerNorm(eqx.Module):
         else:
             self.length = length
 
-        self.w = jnp.ones(self.length)
-        self.b = jnp.zeros(self.length)
+        self.w = nnx.Param(jnp.ones(self.length))
+        self.b = nnx.Param(jnp.zeros(self.length))
 
         # Adds a hook point for the normalisation scale factor
         self.hook_scale = HookPoint()  # [batch, pos, 1]
@@ -63,8 +63,8 @@ class LayerNorm(eqx.Module):
         return self.hook_normalized(x * self.w + self.b)
 
 
-class LayerNormPre(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class LayerNormPre(nnx.Module):
+    cfg: HookedTransformerConfig
 
     hook_scale: HookPoint
     hook_normalized: HookPoint
@@ -98,11 +98,11 @@ class LayerNormPre(eqx.Module):
         return self.hook_normalized(x / scale)
 
 
-class RMSNorm(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
-    length: int = eqx.field(static=True)
+class RMSNorm(nnx.Module):
+    cfg: HookedTransformerConfig
+    length: int
 
-    w: Float[jax.Array, " length"]
+    w: nnx.Param[Float[jax.Array, " length"]]
 
     hook_scale: HookPoint
     hook_normalized: HookPoint
@@ -120,7 +120,7 @@ class RMSNorm(eqx.Module):
         else:
             self.length = length
 
-        self.w = jnp.ones(self.length)
+        self.w = nnx.Param(jnp.ones(self.length))
 
         # Adds a hook point for the normalisation scale factor
         self.hook_scale = HookPoint()  # [batch, pos, 1]
@@ -134,8 +134,8 @@ class RMSNorm(eqx.Module):
         return x * self.w
 
 
-class RMSNormPre(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class RMSNormPre(nnx.Module):
+    cfg: HookedTransformerConfig
 
     hook_scale: HookPoint
     hook_normalized: HookPoint

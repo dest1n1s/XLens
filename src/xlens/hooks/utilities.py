@@ -1,14 +1,17 @@
 from typing import Any, Callable
 
+import flax.nnx as nnx
 from typing_extensions import TypeVar
 
-from xlens.utils import get_nested_component, set_nested_component
+from xlens.utilities.functional import functional
+from xlens.utilities.traverse import get_nested_attr
 
 from .hook_point import HookPoint
 
-U = TypeVar("U")
+U = TypeVar("U", bound=nnx.Module)
 
 
+@functional
 def with_hooks(tree: U, hooks: list[tuple[str, Callable[[Any], Any]]] = []) -> U:
     """Set hooks on a tree of objects.
 
@@ -21,9 +24,9 @@ def with_hooks(tree: U, hooks: list[tuple[str, Callable[[Any], Any]]] = []) -> U
     """
 
     for hook_name, hook_fn in hooks:
-        hook_point = get_nested_component(tree, hook_name, HookPoint)
-        hook_point = hook_point.append_hook(hook_fn)
-        tree = set_nested_component(tree, hook_name, hook_point, HookPoint)
+        hook_point = get_nested_attr(tree, hook_name)
+        assert isinstance(hook_point, HookPoint), f"Attribute {hook_name} is not a HookPoint"
+        hook_point.hooks = hook_point.hooks + [hook_fn]
 
     return tree
 

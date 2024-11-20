@@ -5,7 +5,7 @@ This module contains all the component :class:`MLP`.
 
 from typing import Callable, Optional, Union
 
-import equinox as eqx
+import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Float
@@ -16,18 +16,16 @@ from xlens.hooks.hook_point import HookPoint
 from xlens.utilities.activation_functions import SUPPORTED_ACTIVATIONS
 
 
-class MLP(eqx.Module):
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+class MLP(nnx.Module):
+    cfg: HookedTransformerConfig
 
-    act_fn: Callable[[Float[jax.Array, "batch pos d_mlp"]], Float[jax.Array, "batch pos d_mlp"]] = eqx.field(
-        static=True
-    )
+    act_fn: Callable[[Float[jax.Array, "batch pos d_mlp"]], Float[jax.Array, "batch pos d_mlp"]]
 
-    W_in: Float[jax.Array, "d_model d_mlp"]
-    b_in: Float[jax.Array, " d_mlp"]
+    W_in: nnx.Param[Float[jax.Array, "d_model d_mlp"]]
+    b_in: nnx.Param[Float[jax.Array, " d_mlp"]]
 
-    W_out: Float[jax.Array, "d_mlp d_model"]
-    b_out: Float[jax.Array, " d_model"]
+    W_out: nnx.Param[Float[jax.Array, "d_mlp d_model"]]
+    b_out: nnx.Param[Float[jax.Array, " d_model"]]
 
     ln: Optional[Union[LayerNorm, LayerNormPre]]
 
@@ -44,11 +42,11 @@ class MLP(eqx.Module):
             raise ValueError(f"Unsupported activation function: {cfg.act_fn}")
         self.act_fn = act_fn
 
-        self.W_in = jnp.zeros((cfg.d_model, cfg.d_mlp))
-        self.b_in = jnp.zeros(cfg.d_mlp)
+        self.W_in = nnx.Param(jnp.zeros((cfg.d_model, cfg.d_mlp)))
+        self.b_in = nnx.Param(jnp.zeros(cfg.d_mlp))
 
-        self.W_out = jnp.zeros((cfg.d_mlp, cfg.d_model))
-        self.b_out = jnp.zeros(cfg.d_model)
+        self.W_out = nnx.Param(jnp.zeros((cfg.d_mlp, cfg.d_model)))
+        self.b_out = nnx.Param(jnp.zeros(cfg.d_model))
 
         self.hook_pre = HookPoint()  # [batch, pos, d_mlp]
         self.hook_post = HookPoint()  # [batch, pos, d_mlp]
@@ -78,7 +76,7 @@ class MLP(eqx.Module):
         return post_act @ self.W_out + self.b_out
 
 
-class GatedMLP(eqx.Module):
+class GatedMLP(nnx.Module):
     """
     The equation of a gated MLP:
     pre = x @ W_gate
@@ -89,19 +87,17 @@ class GatedMLP(eqx.Module):
     In one equation, mlp_out = (Gelu(x @ W_gate) * (x @ W_in) + b_in) @ W_out + b_out
     """
 
-    cfg: HookedTransformerConfig = eqx.field(static=True)
+    cfg: HookedTransformerConfig
 
-    act_fn: Callable[[Float[jax.Array, "batch pos d_mlp"]], Float[jax.Array, "batch pos d_mlp"]] = eqx.field(
-        static=True
-    )
+    act_fn: Callable[[Float[jax.Array, "batch pos d_mlp"]], Float[jax.Array, "batch pos d_mlp"]]
 
-    W_in: Float[jax.Array, "d_model d_mlp"]
-    b_in: Float[jax.Array, " d_mlp"]
+    W_in: nnx.Param[Float[jax.Array, "d_model d_mlp"]]
+    b_in: nnx.Param[Float[jax.Array, " d_mlp"]]
 
-    W_out: Float[jax.Array, "d_mlp d_model"]
-    b_out: Float[jax.Array, " d_model"]
+    W_out: nnx.Param[Float[jax.Array, "d_mlp d_model"]]
+    b_out: nnx.Param[Float[jax.Array, " d_model"]]
 
-    W_gate: Float[jax.Array, "d_model d_mlp"]
+    W_gate: nnx.Param[Float[jax.Array, "d_model d_mlp"]]
 
     ln: Optional[Union[LayerNorm, LayerNormPre]]
 
@@ -119,13 +115,13 @@ class GatedMLP(eqx.Module):
             raise ValueError(f"Unsupported activation function: {cfg.act_fn}")
         self.act_fn = act_fn
 
-        self.W_in = jnp.zeros((cfg.d_model, cfg.d_mlp))
-        self.b_in = jnp.zeros(cfg.d_mlp)
+        self.W_in = nnx.Param(jnp.zeros((cfg.d_model, cfg.d_mlp)))
+        self.b_in = nnx.Param(jnp.zeros(cfg.d_mlp))
 
-        self.W_out = jnp.zeros((cfg.d_mlp, cfg.d_model))
-        self.b_out = jnp.zeros(cfg.d_model)
+        self.W_out = nnx.Param(jnp.zeros((cfg.d_mlp, cfg.d_model)))
+        self.b_out = nnx.Param(jnp.zeros(cfg.d_model))
 
-        self.W_gate = jnp.zeros((cfg.d_model, cfg.d_mlp))
+        self.W_gate = nnx.Param(jnp.zeros((cfg.d_model, cfg.d_mlp)))
 
         # hook on gate output but before act_fn
         self.hook_pre = HookPoint()  # [batch, pos, d_mlp]
