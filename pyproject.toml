@@ -8,6 +8,7 @@ dependencies = [
     "einops>=0.8.0",
     "flax>=0.10.1",
     "jax>=0.4.35",
+    "jaxtyping>=0.2.34",
     "optax>=0.2.3",
     "protobuf>=5.28.3",
     "safetensors>=0.4.5",

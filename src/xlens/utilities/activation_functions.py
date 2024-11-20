@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jaxtyping import Float
 
 # Convenient type for the format of each activation function
-ActivationFunction = Callable[..., jax.Array]
+ActivationFunction = Callable[[Float[jax.Array, "..."]], Float[jax.Array, "..."]]
 
 
 def gelu_new(input: Float[jax.Array, "batch pos d_mlp"]) -> Float[jax.Array, "batch pos d_mlp"]:
