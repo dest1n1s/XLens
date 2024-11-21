@@ -9,6 +9,7 @@ from jaxtyping import Float, Int
 from xlens.components.embed import get_offset_position_ids
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
+from xlens.variables.kv_cache import KVCache
 
 
 class Attention(nnx.Module):
@@ -21,9 +22,7 @@ class Attention(nnx.Module):
     repeat_kv_heads: Optional[int]
     rotary_sin: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
     rotary_cos: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
-    past_kv_cache: nnx.Variable[
-        Optional[tuple[Float[jax.Array, "batch kv_pos d_model"], Float[jax.Array, "batch kv_pos d_model"]]]
-    ]
+    past_kv_cache: KVCache
 
     W_Q: nnx.Param[Float[jax.Array, "n_heads d_model d_head"]]
     W_K: nnx.Param[Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]]
@@ -146,7 +145,7 @@ class Attention(nnx.Module):
             self.rotary_sin = None
             self.rotary_cos = None
 
-        self.past_kv_cache = nnx.Variable(None)
+        self.past_kv_cache = KVCache()
 
     def __call__(
         self,
@@ -180,7 +179,6 @@ class Attention(nnx.Module):
             k = jnp.concatenate([k_cache, k], axis=1)
             v = jnp.concatenate([v_cache, v], axis=1)
         self.past_kv_cache.value = (k, v)
-        # print(q[0, -1, 0, :5])
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
