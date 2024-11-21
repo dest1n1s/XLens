@@ -21,6 +21,9 @@ class Attention(nnx.Module):
     repeat_kv_heads: Optional[int]
     rotary_sin: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
     rotary_cos: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
+    past_kv_cache: nnx.Variable[
+        Optional[tuple[Float[jax.Array, "batch kv_pos d_model"], Float[jax.Array, "batch kv_pos d_model"]]]
+    ]
 
     W_Q: nnx.Param[Float[jax.Array, "n_heads d_model d_head"]]
     W_K: nnx.Param[Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]]
@@ -143,6 +146,8 @@ class Attention(nnx.Module):
             self.rotary_sin = None
             self.rotary_cos = None
 
+        self.past_kv_cache = nnx.Variable(None)
+
     def __call__(
         self,
         query_input: Union[
@@ -160,17 +165,22 @@ class Attention(nnx.Module):
             Float[jax.Array, "batch kv_pos kv_head_index d_model"],
         ],
         additive_attention_mask: Optional[Float[jax.Array, "batch 1 1 kv_pos"]] = None,
-        attention_mask: Optional[Int[jax.Array, "batch offset_pos"]] = None,
+        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
     ) -> Float[jax.Array, "batch pos d_model"]:
         """Forward pass for attention.
 
         additive_attention_mask is an optional mask to add to the attention weights. Defaults to None.
         attention_mask is the attention mask for padded tokens. Defaults to None.
         """
-
         q, k, v = self.calculate_qkv_matrices(query_input, key_input, value_input)
 
-        kv_cache_pos_offset = 0
+        kv_cache_pos_offset = 0 if self.past_kv_cache.value is None else self.past_kv_cache.value[0].shape[1]
+        if self.past_kv_cache.value is not None:
+            k_cache, v_cache = self.past_kv_cache.value
+            k = jnp.concatenate([k_cache, k], axis=1)
+            v = jnp.concatenate([v_cache, v], axis=1)
+        self.past_kv_cache.value = (k, v)
+        # print(q[0, -1, 0, :5])
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
@@ -204,19 +214,15 @@ class Attention(nnx.Module):
         pattern = jnp.where(jnp.isnan(pattern), jnp.zeros_like(pattern), pattern)
         pattern = self.hook_pattern(pattern)  # [batch, head_index, query_pos, key_pos]
         z = self.calculate_z_scores(v, pattern)  # [batch, pos, head_index, d_head]
-        w = einops.rearrange(
-            self.W_O.value,
-            "head_index d_head d_model -> d_model head_index d_head",
-        )
         result = self.hook_result(
             einops.einsum(
                 z,
-                w,
-                "... head_index d_head, d_model head_index d_head -> ... head_index d_model",
+                self.W_O.value,
+                "... head_index d_head, head_index d_head d_model -> ... head_index d_model",
             )
         )  # [batch, pos, head_index, d_model]
         out = (
-            einops.reduce(result, "batch position index model->batch position model", "sum") + self.b_O
+            einops.reduce(result, "batch pos index model -> batch pos model", "sum") + self.b_O
         )  # [batch, pos, d_model]
         return out
 
@@ -295,7 +301,7 @@ class Attention(nnx.Module):
         self,
         attn_scores: Float[jax.Array, "batch head_index pos pos_plus_past_kv_pos_offset"],
         past_kv_pos_offset: int = 0,
-        attention_mask: Optional[Int[jax.Array, "batch offset_pos"]] = None,
+        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
     ):
         # The query context length is the number of positions we take queries from - if not using a past_kv_cache this is just the context length (for the current prompt), but if we're caching it can be different.
         query_ctx_length = attn_scores.shape[-2]
@@ -313,7 +319,9 @@ class Attention(nnx.Module):
         if attention_mask is not None:
             # Apply a causal mask to the attention scores considering the padding
             final_mask = einops.einsum(
-                final_mask, attention_mask, "batch head pos offset_pos, batch offset_pos -> batch head pos offset_pos"
+                final_mask,
+                attention_mask,
+                "batch head pos kv_pos, batch kv_pos -> batch head pos kv_pos",
             ).astype(bool)
 
         return jnp.where(final_mask, attn_scores, -jnp.inf)

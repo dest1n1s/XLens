@@ -92,13 +92,12 @@ class TransformerBlock(nnx.Module):
     def __call__(
         self,
         resid_pre: Float[jax.Array, "batch pos d_model"],
-        attention_mask: Optional[Int[jax.Array, "batch offset_pos"]] = None,
+        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
     ) -> Float[jax.Array, "batch pos d_model"]:
         """A single Transformer block.
 
         Args:
             resid_pre (jax.Array): The residual stream - shape [batch, pos, d_model]
-            past_kv_cache_entry (HookedTransformerKeyValueCache): A cache of previous keys and values, used only when generating text. Defaults to None.
             attention_mask (jax.Array, optional): The attention mask for padded tokens. Defaults to None.
 
         Returns:

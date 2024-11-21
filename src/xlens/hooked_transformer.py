@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 import flax.nnx as nnx
 import jax
@@ -75,7 +75,7 @@ class HookedTransformer(nnx.Module):
     def __call__(
         self,
         input_ids: Int[jax.Array, "batch pos"],
-        attention_mask: Optional[jax.Array] = None,  # [batch pos]
+        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
     ) -> Float[jax.Array, "batch pos d_vocab"]:
         """Forward Pass.
 
@@ -96,10 +96,18 @@ class HookedTransformer(nnx.Module):
 
         tokens = self.hook_tokens(input_ids)  # [batch, pos]
         embed = self.hook_embed(self.embed(tokens))  # [batch, pos, d_model]
-        pos_embed = self.hook_pos_embed(self.pos_embed(tokens, 0, attention_mask))  # [batch, pos, d_model]
+        self._check_kv_cache_consistency()  # Check that the KV cache is consistent
+        past_kv_pos_offset = (
+            0
+            if self.blocks[0].attn.past_kv_cache.value is None
+            else self.blocks[0].attn.past_kv_cache.value[0].shape[1]
+        )
+        pos_embed = self.hook_pos_embed(
+            self.pos_embed(tokens, past_kv_pos_offset, attention_mask)
+        )  # [batch, pos, d_model]
         residual = embed + pos_embed
 
-        for _, block in list(zip(range(self.cfg.n_layers), self.blocks)):
+        for block in self.blocks:
             # Note that each block includes skip connections, so we don't need
             # residual + block(residual)
             residual = block(
@@ -113,6 +121,26 @@ class HookedTransformer(nnx.Module):
 
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
         return logits
+
+    def _check_kv_cache_consistency(self):
+        """Check if the KV cache is consistent across blocks.
+
+        This is to ensure that the KV cache is either:
+        - None for all blocks
+        - Non-None and has the same shape for all blocks
+        """
+        all_kv_cache_values = [block.attn.past_kv_cache.value for block in self.blocks]
+        if any(kv_cache_value is not None for kv_cache_value in all_kv_cache_values):
+            assert all(
+                kv_cache_value is not None for kv_cache_value in all_kv_cache_values
+            ), "All cached values must be non-None if any are set"
+            first_cache = cast(tuple[jax.Array, jax.Array], all_kv_cache_values[0])
+            first_k_shape = first_cache[0].shape
+            for k_cache, v_cache in cast(list[tuple[jax.Array, jax.Array]], all_kv_cache_values):
+                assert k_cache.shape == first_k_shape and v_cache.shape == first_k_shape, (
+                    "All cached values must have the same shape. Found shapes %s and %s while first shape is %s"
+                    % (k_cache.shape, v_cache.shape, first_k_shape)
+                )
 
     def run_with_hooks(
         self,
