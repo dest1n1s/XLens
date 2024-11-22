@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Self, Tuple, Union
 
 import einops
 import flax.nnx as nnx
@@ -9,6 +9,7 @@ from jaxtyping import Float, Int
 from xlens.components.embed import get_offset_position_ids
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
+from xlens.utilities.functional import functional
 from xlens.variables.kv_cache import KVCache
 
 
@@ -145,8 +146,9 @@ class Attention(nnx.Module):
             self.rotary_sin = None
             self.rotary_cos = None
 
-        self.past_kv_cache = KVCache()
+        self.past_kv_cache = KVCache(max_length=self.cfg.n_ctx)
 
+    @functional
     def __call__(
         self,
         query_input: Union[
@@ -154,31 +156,28 @@ class Attention(nnx.Module):
             Float[jax.Array, "batch pos head_index d_model"],
         ],
         key_input: Union[
-            Float[jax.Array, "batch kv_pos d_model"],
-            Float[jax.Array, "batch kv_pos head_index d_model"],
-            Float[jax.Array, "batch kv_pos kv_head_index d_model"],
+            Float[jax.Array, "batch pos d_model"],
+            Float[jax.Array, "batch pos head_index d_model"],
+            Float[jax.Array, "batch pos kv_head_index d_model"],
         ],
         value_input: Union[
-            Float[jax.Array, "batch kv_pos d_model"],
-            Float[jax.Array, "batch kv_pos head_index d_model"],
-            Float[jax.Array, "batch kv_pos kv_head_index d_model"],
+            Float[jax.Array, "batch pos d_model"],
+            Float[jax.Array, "batch pos head_index d_model"],
+            Float[jax.Array, "batch pos kv_head_index d_model"],
         ],
-        additive_attention_mask: Optional[Float[jax.Array, "batch 1 1 kv_pos"]] = None,
-        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
-    ) -> Float[jax.Array, "batch pos d_model"]:
+        attention_mask: Optional[Int[jax.Array, "batch pos"]] = None,
+    ) -> tuple[Float[jax.Array, "batch pos d_model"], Self]:
         """Forward pass for attention.
 
-        additive_attention_mask is an optional mask to add to the attention weights. Defaults to None.
         attention_mask is the attention mask for padded tokens. Defaults to None.
         """
         q, k, v = self.calculate_qkv_matrices(query_input, key_input, value_input)
 
-        kv_cache_pos_offset = 0 if self.past_kv_cache.value is None else self.past_kv_cache.value[0].shape[1]
-        if self.past_kv_cache.value is not None:
-            k_cache, v_cache = self.past_kv_cache.value
-            k = jnp.concatenate([k_cache, k], axis=1)
-            v = jnp.concatenate([v_cache, v], axis=1)
-        self.past_kv_cache.value = (k, v)
+        kv_cache_pos_offset = self.past_kv_cache.length
+        if kv_cache_pos_offset > 0:
+            k, v, attention_mask = self.past_kv_cache.append(k, v, attention_mask)
+        else:
+            self.past_kv_cache.append(k, v, attention_mask)
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
@@ -203,8 +202,6 @@ class Attention(nnx.Module):
             attn_scores = self.apply_causal_mask(
                 attn_scores, kv_cache_pos_offset, attention_mask
             )  # [batch, head_index, query_pos, key_pos]
-        if additive_attention_mask is not None:
-            attn_scores += additive_attention_mask
 
         attn_scores = self.hook_attn_scores(attn_scores)
 
@@ -222,7 +219,7 @@ class Attention(nnx.Module):
         out = (
             einops.reduce(result, "batch pos index model -> batch pos model", "sum") + self.b_O
         )  # [batch, pos, d_model]
-        return out
+        return out, self
 
     def calculate_qkv_matrices(
         self,
@@ -297,7 +294,7 @@ class Attention(nnx.Module):
 
     def apply_causal_mask(
         self,
-        attn_scores: Float[jax.Array, "batch head_index pos pos_plus_past_kv_pos_offset"],
+        attn_scores: Float[jax.Array, "batch head_index pos kv_pos"],
         past_kv_pos_offset: int = 0,
         attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
     ):
@@ -307,13 +304,18 @@ class Attention(nnx.Module):
         # If not caching, query_ctx_length == key_ctx_length
         key_ctx_length = attn_scores.shape[-1]
 
-        if query_ctx_length + past_kv_pos_offset != key_ctx_length:
-            raise ValueError(
-                f"query_ctx_length {query_ctx_length} + past_kv_pos_offset {past_kv_pos_offset} != key_ctx_length {key_ctx_length} - you likely have a bug."
-            )
-
         # Index back to front to ensure local attention works
-        final_mask = self.mask[None, None, -query_ctx_length:, -key_ctx_length:]  # [1, 1, pos, pos]
+        final_mask = self.mask.value[None, None, -query_ctx_length:, -(query_ctx_length + past_kv_pos_offset) :]
+
+        # Add padding to the mask if we're using a past_kv_cache
+        final_mask = jnp.concatenate(
+            [
+                final_mask,
+                jnp.zeros((1, 1, query_ctx_length, key_ctx_length - query_ctx_length - past_kv_pos_offset)),
+            ],
+            axis=-1,
+        )
+
         if attention_mask is not None:
             # Apply a causal mask to the attention scores considering the padding
             final_mask = einops.einsum(
@@ -375,7 +377,7 @@ class Attention(nnx.Module):
         self,
         x: Float[jax.Array, "batch pos head_index d_head"],
         past_kv_pos_offset: int = 0,
-        attention_mask: Optional[jnp.ndarray] = None,
+        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
         rotary_dim: int = 64,
     ) -> jnp.ndarray:
         """

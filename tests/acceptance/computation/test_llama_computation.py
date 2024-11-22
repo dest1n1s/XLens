@@ -28,7 +28,7 @@ def test_llama_computation():
     model = HookedTransformer.from_pretrained("meta-llama/Llama-3.2-1B")
 
     input = jnp.array(hf_input)
-    logits = model(input)
+    logits, _ = model(input)
 
     print("Logits Difference: ", jnp.linalg.norm(logits - jnp.array(hf_logits)))
 

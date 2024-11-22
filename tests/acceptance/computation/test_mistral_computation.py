@@ -31,7 +31,7 @@ def test_mistral_computation():
     model = HookedTransformer.from_pretrained("mistralai/Mistral-7B-v0.1")
 
     input = jnp.array(hf_input)
-    logits, cache = model.run_with_cache(input, hook_names=[f"blocks.{i}.hook_resid_pre" for i in range(12)])
+    logits, cache, _ = model.run_with_cache(input, hook_names=[f"blocks.{i}.hook_resid_pre" for i in range(12)])
 
     for i in range(12):
         print(

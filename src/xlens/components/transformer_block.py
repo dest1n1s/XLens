@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Self, Union
 
 import flax.nnx as nnx
 import jax
@@ -9,6 +9,7 @@ from xlens.components.attention import Attention
 from xlens.components.mlp import MLP, GatedMLP
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
+from xlens.utilities.functional import functional
 
 LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
 
@@ -89,11 +90,12 @@ class TransformerBlock(nnx.Module):
         self.hook_resid_mid = HookPoint() if not self.cfg.attn_only else None  # [batch, pos, d_model]
         self.hook_resid_post = HookPoint()  # [batch, pos, d_model]
 
+    @functional
     def __call__(
         self,
         resid_pre: Float[jax.Array, "batch pos d_model"],
-        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
-    ) -> Float[jax.Array, "batch pos d_model"]:
+        attention_mask: Optional[Int[jax.Array, "batch pos"]] = None,
+    ) -> tuple[Float[jax.Array, "batch pos d_model"], Self]:
         """A single Transformer block.
 
         Args:
@@ -111,17 +113,18 @@ class TransformerBlock(nnx.Module):
         key_input = attn_in
         value_input = attn_in
 
-        attn_out = self.hook_attn_out(
-            # hook the residual stream states that are used to calculate the
-            # queries, keys and values, independently.
-            # Then take the layer norm of these inputs, and pass these to the attention module.
-            self.attn(
-                query_input=self.ln1(query_input),
-                key_input=self.ln1(key_input),
-                value_input=self.ln1(value_input),
-                attention_mask=attention_mask,
-            )
-        )  # [batch, pos, d_model]
+        # hook the residual stream states that are used to calculate the
+        # queries, keys and values, independently.
+        # Then take the layer norm of these inputs, and pass these to the attention module.
+
+        attn_out, self.attn = self.attn(
+            query_input=self.ln1(query_input),
+            key_input=self.ln1(key_input),
+            value_input=self.ln1(value_input),
+            attention_mask=attention_mask,
+        )
+
+        attn_out = self.hook_attn_out(attn_out)  # [batch, pos, d_model]
 
         if not self.cfg.attn_only and not self.cfg.parallel_attn_mlp:
             assert (
@@ -144,7 +147,7 @@ class TransformerBlock(nnx.Module):
         else:
             resid_post = self.hook_resid_post(resid_pre + attn_out)  # [batch, pos, d_model]
 
-        return resid_post
+        return resid_post, self
 
     def apply_mlp(
         self, normalized_resid: Float[jax.Array, "batch pos d_model"]

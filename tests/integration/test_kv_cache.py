@@ -22,10 +22,10 @@ def test_kv_cache_attention():
     @functional
     def cache_forward(attention: Attention, input: jax.Array) -> jax.Array:
         assert attention.past_kv_cache.value is None
-        logits_head = attention(input[:, :-1], input[:, :-1], input[:, :-1])
+        logits_head, attention = attention(input[:, :-1], input[:, :-1], input[:, :-1])
         assert attention.past_kv_cache.value is not None
-        logits_tail = attention(input[:, -1:], input[:, -1:], input[:, -1:])
-        return jnp.concatenate([logits_head, logits_tail], axis=1)
+        logits_tail, attention = attention(input[:, -1:], input[:, -1:], input[:, -1:])
+        return jnp.concatenate([logits_head, logits_tail], axis=1), attention
 
     cache_result = cache_forward(attention, input)
 
@@ -39,15 +39,15 @@ def test_kv_cache():
 
     @functional
     def no_cache_forward(model: HookedTransformer, input: jax.Array) -> jax.Array:
-        return model(input)
+        return model(input)[0]
 
     no_cache_logits = no_cache_forward(model, input)
 
     @functional
     def cache_forward(model: HookedTransformer, input: jax.Array) -> jax.Array:
-        logits_head = model(input[:, :-1])
+        logits_head, model = model(input[:, :-2])
         assert model.blocks[0].attn.past_kv_cache.value is not None
-        logits_tail = model(input[:, -1:])
+        logits_tail, model = model(input[:, -2:])
         return jnp.concatenate([logits_head, logits_tail], axis=1)
 
     cache_logits = cache_forward(model, input)

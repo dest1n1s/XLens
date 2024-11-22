@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Optional, Self, Union
 
 import flax.nnx as nnx
 import jax
@@ -17,6 +17,7 @@ from xlens.components import (
 )
 from xlens.hooks import with_cache, with_hooks
 from xlens.pretrained.convert import get_pretrained_model_config, get_pretrained_weights
+from xlens.utilities.functional import functional
 from xlens.utils import load_pretrained_weights
 
 from .config import HookedTransformerConfig
@@ -72,11 +73,12 @@ class HookedTransformer(nnx.Module):
         self.hook_tokens = HookPoint()
         self.hook_pos_embed = HookPoint()
 
+    @functional
     def __call__(
         self,
         input_ids: Int[jax.Array, "batch pos"],
-        attention_mask: Optional[Int[jax.Array, "batch kv_pos"]] = None,
-    ) -> Float[jax.Array, "batch pos d_vocab"]:
+        attention_mask: Optional[Int[jax.Array, "batch pos"]] = None,
+    ) -> tuple[Float[jax.Array, "batch pos d_vocab"], Self]:
         """Forward Pass.
 
         Input is either a batch of tokens ([batch, pos]) or a text string, a string is automatically
@@ -97,30 +99,27 @@ class HookedTransformer(nnx.Module):
         tokens = self.hook_tokens(input_ids)  # [batch, pos]
         embed = self.hook_embed(self.embed(tokens))  # [batch, pos, d_model]
         self._check_kv_cache_consistency()  # Check that the KV cache is consistent
-        past_kv_pos_offset = (
-            0
-            if self.blocks[0].attn.past_kv_cache.value is None
-            else self.blocks[0].attn.past_kv_cache.value[0].shape[1]
-        )
+        past_kv_pos_offset = self.blocks[0].attn.past_kv_cache.length
         pos_embed = self.hook_pos_embed(
             self.pos_embed(tokens, past_kv_pos_offset, attention_mask)
         )  # [batch, pos, d_model]
         residual = embed + pos_embed
 
-        for block in self.blocks:
+        for i, block in enumerate(self.blocks):
             # Note that each block includes skip connections, so we don't need
             # residual + block(residual)
-            residual = block(
+            residual, block = block(
                 residual,
                 attention_mask=attention_mask,
             )  # [batch, pos, d_model]
+            self.blocks[i] = block
 
         if self.cfg.normalization_type is not None:
             assert self.ln_final is not None, "ln_final should be set if normalization_type is set"
             residual = self.ln_final(residual)  # [batch, pos, d_model]
 
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
-        return logits
+        return logits, self
 
     def _check_kv_cache_consistency(self):
         """Check if the KV cache is consistent across blocks.
@@ -129,25 +128,17 @@ class HookedTransformer(nnx.Module):
         - None for all blocks
         - Non-None and has the same shape for all blocks
         """
-        all_kv_cache_values = [block.attn.past_kv_cache.value for block in self.blocks]
-        if any(kv_cache_value is not None for kv_cache_value in all_kv_cache_values):
-            assert all(
-                kv_cache_value is not None for kv_cache_value in all_kv_cache_values
-            ), "All cached values must be non-None if any are set"
-            first_cache = cast(tuple[jax.Array, jax.Array], all_kv_cache_values[0])
-            first_k_shape = first_cache[0].shape
-            for k_cache, v_cache in cast(list[tuple[jax.Array, jax.Array]], all_kv_cache_values):
-                assert k_cache.shape == first_k_shape and v_cache.shape == first_k_shape, (
-                    "All cached values must have the same shape. Found shapes %s and %s while first shape is %s"
-                    % (k_cache.shape, v_cache.shape, first_k_shape)
-                )
+        all_kv_cache_lengths = [block.attn.past_kv_cache.length for block in self.blocks]
+        assert all(
+            kv_cache_length == all_kv_cache_lengths[0] for kv_cache_length in all_kv_cache_lengths
+        ), "All KV cache lengths must be the same"
 
     def run_with_hooks(
         self,
         input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
         hooks: list[tuple[str, Callable[[Any], Any]]] = [],
-    ) -> Float[jax.Array, "batch pos d_vocab"]:
+    ) -> tuple[Float[jax.Array, "batch pos d_vocab"], Self]:
         """Forward Pass with hooks.
 
         This is the same as the normal forward pass, but allows you to add hooks to the forward pass
@@ -173,7 +164,7 @@ class HookedTransformer(nnx.Module):
         input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
         hook_names: list[str] = [],
-    ) -> tuple[Float[jax.Array, "batch pos d_vocab"], dict[str, Any]]:
+    ) -> tuple[Float[jax.Array, "batch pos d_vocab"], dict[str, Any], Self]:
         """Forward Pass with cache.
 
         This is the same as the normal forward pass, but allows you to pass in a cache dictionary
@@ -189,9 +180,9 @@ class HookedTransformer(nnx.Module):
 
         model, cache = with_cache(self, hook_names)
 
-        out = model(input_ids, attention_mask=attention_mask)
+        out, model = model(input_ids, attention_mask=attention_mask)
 
-        return out, cache
+        return out, cache, model
 
     @classmethod
     def from_pretrained(cls, model_name: str, hf_model: Any = None) -> "HookedTransformer":

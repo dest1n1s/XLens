@@ -15,7 +15,7 @@ def test_gpt2_computation_speed():
     input = tokenizer("Hello, my dog is cute", return_tensors="np")["input_ids"]
 
     def forward(input):
-        return model(input)
+        return model(input)[0]
 
     print(f"JAX not jitted: {timeit.timeit(lambda: forward(input), number=10) / 10} seconds")
     jitted_forward = jax.jit(forward)

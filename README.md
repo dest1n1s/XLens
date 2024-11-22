@@ -40,7 +40,7 @@ model = HookedTransformer.from_pretrained("meta-llama/Llama-3.2-1B")
 
 # Capture the activations of the model
 inputs = tokenizer("Hello, world!", return_tensors="np")
-logits, cache = model.run_with_cache(**inputs, hook_names=["blocks.0.hook_attn_out"])
+logits, cache, _ = model.run_with_cache(**inputs, hook_names=["blocks.0.hook_attn_out"])
 print(cache["blocks.0.hook_attn_out"].shape) # (1, 5, 2048)
 ```
 

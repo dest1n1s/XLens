@@ -30,7 +30,7 @@ def test_pythia_computation():
     model = HookedTransformer.from_pretrained("EleutherAI/pythia-70m")
 
     input = jnp.array(hf_input)
-    logits = model(input)
+    logits, _ = model(input)
 
     print("Logits Difference: ", jnp.linalg.norm(logits - jnp.array(hf_logits)))
 

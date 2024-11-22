@@ -27,7 +27,7 @@ def test_gpt2_computation():
     model = HookedTransformer.from_pretrained("gpt2")
 
     input = jnp.array(hf_input)
-    logits = model(input)
+    logits, _ = model(input)
 
     print("Logits Difference: ", jnp.linalg.norm(logits - jnp.array(hf_logits)))
 
