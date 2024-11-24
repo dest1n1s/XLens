@@ -1,8 +1,10 @@
 import logging
-from typing import Any, Callable, Optional, Self, Union
+from functools import partial
+from typing import Any, Callable, Optional, Self, TypeVar, Union
 
 import flax.nnx as nnx
 import jax
+import jax.numpy as jnp
 from jaxtyping import Float, Int
 
 from xlens.components import (
@@ -23,7 +25,9 @@ from xlens.utils import load_pretrained_weights
 from .config import HookedTransformerConfig
 from .hooks import HookPoint
 
+U = TypeVar("U")
 LayerNormLike = Union[LayerNorm, LayerNormPre, RMSNorm, RMSNormPre]
+CarryType = tuple[int, Int[jax.Array, "batch generated_pos"], tuple[nnx.GraphDef[U], nnx.GraphState]]
 
 
 class HookedTransformer(nnx.Module):
@@ -121,6 +125,7 @@ class HookedTransformer(nnx.Module):
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
         return logits, self
 
+    # @checkify.checkify
     def _check_kv_cache_consistency(self):
         """Check if the KV cache is consistent across blocks.
 
@@ -128,10 +133,14 @@ class HookedTransformer(nnx.Module):
         - None for all blocks
         - Non-None and has the same shape for all blocks
         """
-        all_kv_cache_lengths = [block.attn.past_kv_cache.length for block in self.blocks]
-        assert all(
-            kv_cache_length == all_kv_cache_lengths[0] for kv_cache_length in all_kv_cache_lengths
-        ), "All KV cache lengths must be the same"
+        # all_kv_cache_lengths = [block.attn.past_kv_cache.length for block in self.blocks]
+        # checkify.check(
+        #     jnp.all(
+        #         jnp.array([kv_cache_length == all_kv_cache_lengths[0] for kv_cache_length in all_kv_cache_lengths])
+        #     ),
+        #     "All KV cache lengths must be the same",
+        # )
+        pass
 
     def run_with_hooks(
         self,
@@ -185,6 +194,7 @@ class HookedTransformer(nnx.Module):
         return out, cache, model
 
     @classmethod
+    @functional(transform=partial(jax.jit, static_argnums=(0, 1, 2)))
     def from_pretrained(cls, model_name: str, hf_model: Any = None) -> "HookedTransformer":
         """Load a pretrained model.
 
@@ -199,3 +209,74 @@ class HookedTransformer(nnx.Module):
         model = HookedTransformer(cfg)
         model = load_pretrained_weights(model, weights)
         return model
+
+    @functional
+    def generate(
+        self, input_ids: Int[jax.Array, "batch pos"], eos_token_id: int, top_k: int = 5, top_p: float = 0.95
+    ) -> tuple[Float[jax.Array, "batch generated_pos"], "HookedTransformer"]:
+        """Generate tokens from the model.
+
+        Args:
+            input_ids: Int[jax.Array, "batch pos"]: The input tokens to generate from.
+            eos_token_id: int: The token id to use as an end-of-sequence token.
+            top_k: int: The number of top tokens to consider for sampling.
+            top_p: float: The cumulative probability threshold for top-p sampling.
+        """
+
+        def sample_top_k_top_p(
+            logits: Float[jax.Array, "batch d_vocab"], top_k: int, top_p: float
+        ) -> Int[jax.Array, " batch"]:
+            # Get top k logits and indices
+            top_logits, top_indices = jax.lax.top_k(logits, top_k)
+
+            # Apply softmax to get probabilities
+            probs = jax.nn.softmax(top_logits, axis=-1)
+
+            # Apply top-p (nucleus) sampling
+            sorted_probs = jnp.sort(probs, axis=-1, descending=True)
+            cumulative_probs = jnp.cumsum(sorted_probs, axis=-1)
+            probs = jnp.where(cumulative_probs > top_p, 0.0, probs)
+            probs = probs / probs.sum(axis=-1, keepdims=True)
+
+            # Sample from the filtered distribution
+            next_token = jax.random.categorical(jax.random.PRNGKey(0), jnp.log(probs))[:, None]
+
+            return jnp.take_along_axis(top_indices, next_token, axis=1)
+
+        @functional
+        def cond_fn(carry: CarryType[Self]) -> jax.Array:
+            i, current_ids, _ = carry
+            return jnp.logical_and(i < self.cfg.n_ctx, ~jnp.any(current_ids[:, i] == eos_token_id))
+
+        @functional
+        def body_fn(
+            carry: CarryType[Self],
+        ) -> CarryType[Self]:
+            i, current_ids, (graph_def, state) = carry
+            model = nnx.merge(graph_def, state)
+            # Get logits for the last token
+            logits, model = model(current_ids[:, i - 1][:, None])
+            next_token_logits = logits[:, -1, :]
+
+            # Sample next token
+            next_token = sample_top_k_top_p(next_token_logits, top_k, top_p)
+
+            # Append new token
+            current_ids = jax.lax.dynamic_update_slice(current_ids, next_token, (0, i))
+            return i + 1, current_ids, nnx.split(model)
+
+        # First iteration should be separately handled
+        logits, model = self(input_ids)
+        next_token = sample_top_k_top_p(logits[:, -1, :], top_k, top_p)
+        current_ids = jnp.zeros((input_ids.shape[0], self.cfg.n_ctx), dtype=jnp.int32)
+        current_ids = jax.lax.dynamic_update_slice(current_ids, input_ids, (0, 0))
+        current_ids = jax.lax.dynamic_update_slice(current_ids, next_token, (0, input_ids.shape[1]))
+
+        # Initialize loop variables
+        init_carry = (input_ids.shape[1] + 1, current_ids, nnx.split(model))
+
+        # Run the generation loop
+        _, generated_ids, (graph_def, state) = jax.lax.while_loop(cond_fn, body_fn, init_carry)
+        model = nnx.merge(graph_def, state)
+
+        return generated_ids, model

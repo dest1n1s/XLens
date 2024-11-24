@@ -51,8 +51,8 @@ def test_kv_cache():
         return jnp.concatenate([logits_head, logits_tail], axis=1)
 
     cache_logits = cache_forward(model, input)
-    print("No Cache Logits: ", no_cache_logits[0, -1, :5])
-    print("Cache Logits: ", cache_logits[0, -1, :5])
+    print("No Cache Logits: ", no_cache_logits[0, :, :5])
+    print("Cache Logits: ", cache_logits[0, :, :5])
 
     assert jnp.allclose(no_cache_logits, cache_logits, atol=1e-4)
 

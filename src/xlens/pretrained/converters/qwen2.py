@@ -24,6 +24,12 @@ class Qwen2Converter(HuggingFaceModelConverterSingle):
                 "Qwen/Qwen2-7B",
                 "Qwen/Qwen2-13B",
                 "Qwen/Qwen2-72B",
+                "Qwen/Qwen2-0.5B-Instruct",
+                "Qwen/Qwen2-1.8B-Instruct",
+                "Qwen/Qwen2-4B-Instruct",
+                "Qwen/Qwen2-7B-Instruct",
+                "Qwen/Qwen2-13B-Instruct",
+                "Qwen/Qwen2-72B-Instruct",
             ],
             model_alias_map={
                 "Qwen/Qwen1.5-0.5B": ["qwen1.5-0.5b", "qwen15-0.5b"],

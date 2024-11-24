@@ -10,7 +10,7 @@ from xlens.components.embed import get_offset_position_ids
 from xlens.config import HookedTransformerConfig
 from xlens.hooks.hook_point import HookPoint
 from xlens.utilities.functional import functional
-from xlens.variables.kv_cache import KVCache
+from xlens.variables.past_context_cache import PastContextCache
 
 
 class Attention(nnx.Module):
@@ -23,7 +23,13 @@ class Attention(nnx.Module):
     repeat_kv_heads: Optional[int]
     rotary_sin: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
     rotary_cos: Optional[nnx.Variable[Float[jax.Array, "n_ctx rotary_dim"]]]
-    past_kv_cache: KVCache
+    past_kv_cache: PastContextCache[
+        tuple[
+            Float[jax.Array, "batch pos d_model"],
+            Float[jax.Array, "batch pos d_model"],
+            Optional[Int[jax.Array, "batch pos"]],
+        ]
+    ]
 
     W_Q: nnx.Param[Float[jax.Array, "n_heads d_model d_head"]]
     W_K: nnx.Param[Float[jax.Array, "n_heads d_model d_head"] | Float[jax.Array, "n_key_value_heads d_model d_head"]]
@@ -146,7 +152,7 @@ class Attention(nnx.Module):
             self.rotary_sin = None
             self.rotary_cos = None
 
-        self.past_kv_cache = KVCache(max_length=self.cfg.n_ctx)
+        self.past_kv_cache = PastContextCache(max_length=self.cfg.n_ctx)
 
     @functional
     def __call__(
@@ -174,10 +180,7 @@ class Attention(nnx.Module):
         q, k, v = self.calculate_qkv_matrices(query_input, key_input, value_input)
 
         kv_cache_pos_offset = self.past_kv_cache.length
-        if kv_cache_pos_offset > 0:
-            k, v, attention_mask = self.past_kv_cache.append(k, v, attention_mask)
-        else:
-            self.past_kv_cache.append(k, v, attention_mask)
+        k, v, attention_mask = self.past_kv_cache.append((k, v, attention_mask), length=query_input.shape[1])
 
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
@@ -219,6 +222,7 @@ class Attention(nnx.Module):
         out = (
             einops.reduce(result, "batch pos index model -> batch pos model", "sum") + self.b_O
         )  # [batch, pos, d_model]
+
         return out, self
 
     def calculate_qkv_matrices(
@@ -305,16 +309,16 @@ class Attention(nnx.Module):
         key_ctx_length = attn_scores.shape[-1]
 
         # Index back to front to ensure local attention works
-        final_mask = self.mask.value[None, None, -query_ctx_length:, -(query_ctx_length + past_kv_pos_offset) :]
 
-        # Add padding to the mask if we're using a past_kv_cache
-        final_mask = jnp.concatenate(
-            [
-                final_mask,
-                jnp.zeros((1, 1, query_ctx_length, key_ctx_length - query_ctx_length - past_kv_pos_offset)),
-            ],
-            axis=-1,
-        )
+        # final_mask = self.mask.value[None, None, -query_ctx_length:, -(query_ctx_length + past_kv_pos_offset) :]
+        query_start = self.mask.value.shape[0] - query_ctx_length
+        key_start = self.mask.value.shape[1] - (query_ctx_length + past_kv_pos_offset)
+        mask = jnp.concatenate([self.mask.value, jnp.zeros((self.mask.value.shape[0], key_ctx_length))], axis=-1)
+        final_mask = jax.lax.dynamic_slice(
+            mask,
+            (query_start, key_start),
+            (query_ctx_length, key_ctx_length),
+        )[None, None, :, :]
 
         if attention_mask is not None:
             # Apply a causal mask to the attention scores considering the padding
@@ -394,11 +398,19 @@ class Attention(nnx.Module):
         x_flip = self.rotate_every_two(x_rot)  # You need to define this function
 
         if attention_mask is None:
-            rotary_cos_slice = self.rotary_cos[None, past_kv_pos_offset : past_kv_pos_offset + x_pos, None, :]
-            rotary_sin_slice = self.rotary_sin[None, past_kv_pos_offset : past_kv_pos_offset + x_pos, None, :]
+            rotary_cos_slice = jax.lax.dynamic_slice(
+                self.rotary_cos.value, (past_kv_pos_offset, 0), (x_pos, rotary_dim)
+            )[None, :, None, :]
+            rotary_sin_slice = jax.lax.dynamic_slice(
+                self.rotary_sin.value, (past_kv_pos_offset, 0), (x_pos, rotary_dim)
+            )[None, :, None, :]
             x_rotated = x_rot * rotary_cos_slice + x_flip * rotary_sin_slice
         else:
-            offset_position_ids = get_offset_position_ids(past_kv_pos_offset, attention_mask)
+            offset_position_ids = get_offset_position_ids(attention_mask)
+            offset_position_ids = jax.lax.dynamic_slice(
+                offset_position_ids, (0, past_kv_pos_offset), (x.shape[0], x_pos)
+            )
+
             mask_rotary_cos = self.rotary_cos[offset_position_ids, None, :]
             mask_rotary_sin = self.rotary_sin[offset_position_ids, None, :]
             x_rotated = x_rot * mask_rotary_cos + x_flip * mask_rotary_sin
