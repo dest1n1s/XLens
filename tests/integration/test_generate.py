@@ -21,6 +21,10 @@ def test_generate():
     def generate_with_timeit():
         return generate(model, input_ids, eos_token_id=tokenizer.eos_token_id)
 
+    print(
+        "No JIT time:",
+        timeit.timeit(lambda: model.generate(input_ids, eos_token_id=tokenizer.eos_token_id), number=5) / 5,
+    )
     print("JIT time:", timeit.timeit(generate_with_timeit, number=1))
     print("JITted time:", timeit.timeit(generate_with_timeit, number=10) / 10)
     generated = generate_with_timeit()
