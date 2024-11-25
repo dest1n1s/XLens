@@ -212,7 +212,12 @@ class HookedTransformer(nnx.Module):
 
     @functional
     def generate(
-        self, input_ids: Int[jax.Array, "batch pos"], eos_token_id: int, top_k: int = 5, top_p: float = 0.95
+        self,
+        input_ids: Int[jax.Array, "batch pos"],
+        eos_token_id: int,
+        top_k: int = 5,
+        top_p: float = 0.95,
+        rng: Optional[jax.Array] = None,
     ) -> tuple[Float[jax.Array, "batch generated_pos"], "HookedTransformer"]:
         """Generate tokens from the model.
 
@@ -221,10 +226,15 @@ class HookedTransformer(nnx.Module):
             eos_token_id: int: The token id to use as an end-of-sequence token.
             top_k: int: The number of top tokens to consider for sampling.
             top_p: float: The cumulative probability threshold for top-p sampling.
+            rng: Optional[jax.random.KeyArray]: A random number generator key. If not provided, a
+                new key will be created.
         """
 
-        def sample_top_k_top_p(
-            logits: Float[jax.Array, "batch d_vocab"], top_k: int, top_p: float
+        if rng is None:
+            rng = jax.random.PRNGKey(0)
+
+        def sample_next_token(
+            logits: Float[jax.Array, "batch d_vocab"], top_k: int, top_p: float, rng: jax.Array
         ) -> Int[jax.Array, " batch"]:
             # Get top k logits and indices
             top_logits, top_indices = jax.lax.top_k(logits, top_k)
@@ -239,7 +249,7 @@ class HookedTransformer(nnx.Module):
             probs = probs / probs.sum(axis=-1, keepdims=True)
 
             # Sample from the filtered distribution
-            next_token = jax.random.categorical(jax.random.PRNGKey(0), jnp.log(probs))[:, None]
+            next_token = jax.random.categorical(rng, jnp.log(probs))[:, None]
 
             return jnp.take_along_axis(top_indices, next_token, axis=1)
 
@@ -259,7 +269,7 @@ class HookedTransformer(nnx.Module):
             next_token_logits = logits[:, -1, :]
 
             # Sample next token
-            next_token = sample_top_k_top_p(next_token_logits, top_k, top_p)
+            next_token = sample_next_token(next_token_logits, top_k, top_p, jax.random.fold_in(rng, i))
 
             # Append new token
             current_ids = jax.lax.dynamic_update_slice(current_ids, next_token, (0, i))
@@ -267,7 +277,7 @@ class HookedTransformer(nnx.Module):
 
         # First iteration should be separately handled
         logits, model = self(input_ids)
-        next_token = sample_top_k_top_p(logits[:, -1, :], top_k, top_p)
+        next_token = sample_next_token(logits[:, -1, :], top_k, top_p, jax.random.fold_in(rng, 0))
         current_ids = jnp.zeros((input_ids.shape[0], self.cfg.n_ctx), dtype=jnp.int32)
         current_ids = jax.lax.dynamic_update_slice(current_ids, input_ids, (0, 0))
         current_ids = jax.lax.dynamic_update_slice(current_ids, next_token, (0, input_ids.shape[1]))
