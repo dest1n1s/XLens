@@ -3,7 +3,7 @@
 This module contains all the component :class:`MLP`.
 """
 
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Self, Union
 
 import flax.nnx as nnx
 import jax
@@ -61,19 +61,20 @@ class MLP(nnx.Module):
             self.hook_mid = None
             self.ln = None
 
-    def __call__(self, x: Float[jax.Array, "batch pos d_model"]) -> Float[jax.Array, "batch pos d_model"]:
+    def __call__(self, x: Float[jax.Array, "batch pos d_model"]) -> tuple[Float[jax.Array, "batch pos d_model"], Self]:
         # There's no fused `addmm` here. May cause performance issues.
-        pre_act = self.hook_pre(x @ self.W_in + self.b_in)
+        pre_act, self.hook_pre = self.hook_pre(x @ self.W_in + self.b_in)
 
         if self.cfg.is_layer_norm_activation():
             assert (
                 self.ln is not None and self.hook_mid is not None
             ), "LayerNorm and HookPoint must be set for layer norm activation"
-            mid_act = self.hook_mid(self.act_fn(pre_act))  # [batch, pos, d_mlp]
-            post_act = self.hook_post(self.ln(mid_act))
+            mid_act, self.hook_mid = self.hook_mid(self.act_fn(pre_act))  # [batch, pos, d_mlp]
+            mid_act, self.ln = self.ln(mid_act)
+            post_act, self.hook_post = self.hook_post(mid_act)
         else:
-            post_act = self.hook_post(self.act_fn(pre_act))  # [batch, pos, d_mlp]
-        return post_act @ self.W_out + self.b_out
+            post_act, self.hook_post = self.hook_post(self.act_fn(pre_act))  # [batch, pos, d_mlp]
+        return post_act @ self.W_out + self.b_out, self
 
 
 class GatedMLP(nnx.Module):
@@ -140,18 +141,21 @@ class GatedMLP(nnx.Module):
             self.hook_mid = None
             self.ln = None
 
-    def __call__(self, x: Float[jax.Array, "batch pos d_model"]) -> Float[jax.Array, "batch pos d_model"]:
+    def __call__(self, x: Float[jax.Array, "batch pos d_model"]) -> tuple[Float[jax.Array, "batch pos d_model"], Self]:
         # Technically, all these einsums could be done with a single matmul, but this is more readable.
-        pre_act = self.hook_pre(x @ self.W_gate)
+        pre_act, self.hook_pre = self.hook_pre(x @ self.W_gate)
 
         if self.cfg.is_layer_norm_activation() and self.hook_mid is not None and self.ln is not None:
             assert (
                 self.ln is not None and self.hook_mid is not None
             ), "LayerNorm and HookPoint must be set for layer norm activation"
-            mid_act = self.hook_mid(self.act_fn(pre_act))  # [batch, pos, d_mlp]
-            post_act = self.hook_post(self.ln(mid_act))
+            mid_act, self.hook_mid = self.hook_mid(self.act_fn(pre_act))  # [batch, pos, d_mlp]
+            mid_act, self.ln = self.ln(mid_act)
+            post_act, self.hook_post = self.hook_post(mid_act)
         else:
-            pre_linear = self.hook_pre_linear(x @ self.W_in)
-            post_act = self.hook_post((self.act_fn(pre_act) * pre_linear) + self.b_in)  # [batch, pos, d_mlp]
+            pre_linear, self.hook_pre_linear = self.hook_pre_linear(x @ self.W_in)
+            post_act, self.hook_post = self.hook_post(
+                (self.act_fn(pre_act) * pre_linear) + self.b_in
+            )  # [batch, pos, d_mlp]
 
-        return post_act @ self.W_out + self.b_out
+        return post_act @ self.W_out + self.b_out, self

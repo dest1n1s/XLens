@@ -12,7 +12,7 @@ U = TypeVar("U", bound=nnx.Module)
 
 
 @functional
-def with_hooks(tree: U, hooks: list[tuple[str, Callable[[Any], Any]]] = []) -> U:
+def with_hooks(tree: U, hooks: list[tuple[str, Callable[[Any, Any], tuple[Any, Any]]]] = []) -> U:
     """Set hooks on a tree of objects.
 
     Args:
@@ -31,26 +31,27 @@ def with_hooks(tree: U, hooks: list[tuple[str, Callable[[Any], Any]]] = []) -> U
     return tree
 
 
-def with_cache(tree: U, hook_names: list[str] = []) -> tuple[U, dict[str, Any]]:
+def with_cache(tree: U, hook_names: list[str] = []) -> U:
     """Set hooks on a tree of objects.
 
-    Warning: This is not a pure function. Each time the tree is called, the cache will be updated.
-            Do JIT outside the full scope of the cache.
+    This function uses the state of the hook point to cache the values.
 
     Args:
         tree: U: The tree of objects to set hooks on.
         hook_names: list[str]: A list of strings, where each string is the name of a hook point
     """
 
-    cache = {}
-
     def hook_fn(name: str):
-        def _hook_fn(x: Any):
-            cache[name] = x
-            return x
+        def _hook_fn(x: Any, state: Any):
+            assert state is None, "State to cache should be None"
+            return x, x
 
         return _hook_fn
 
     tree = with_hooks(tree, [(name, hook_fn(name)) for name in hook_names])
 
-    return tree, cache
+    return tree
+
+
+def retrieve_cache(tree: Any, hook_names: list[str] = []) -> dict[str, Any]:
+    return {name: get_nested_attr(tree, name).state.value for name in hook_names}

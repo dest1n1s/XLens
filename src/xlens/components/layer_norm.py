@@ -3,7 +3,7 @@
 This module contains all the component :class:`LayerNorm`.
 """
 
-from typing import Optional, Union
+from typing import Optional, Self, Union
 
 import flax.nnx as nnx
 import jax
@@ -50,17 +50,19 @@ class LayerNorm(nnx.Module):
             Float[jax.Array, "batch pos d_model"],
             Float[jax.Array, "batch pos head_index d_model"],
         ],
-    ) -> Union[
-        Float[jax.Array, "batch pos d_model"],
-        Float[jax.Array, "batch pos head_index d_model"],
+    ) -> tuple[
+        Union[
+            Float[jax.Array, "batch pos d_model"],
+            Float[jax.Array, "batch pos head_index d_model"],
+        ],
+        Self,
     ]:
         x = x - x.mean(-1, keepdims=True)  # [batch, pos, length]
 
-        scale: Float[jax.Array, "batch pos 1"] = self.hook_scale(
-            jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps)
-        )
+        scale, self.hook_scale = self.hook_scale(jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps))
         x = x / scale  # [batch, pos, length]
-        return self.hook_normalized(x * self.w + self.b)
+        x, self.hook_normalized = self.hook_normalized(x * self.w + self.b)
+        return x, self
 
 
 class LayerNormPre(nnx.Module):
@@ -87,15 +89,17 @@ class LayerNormPre(nnx.Module):
             Float[jax.Array, "batch pos d_model"],
             Float[jax.Array, "batch pos head_index d_model"],
         ],
-    ) -> Union[
-        Float[jax.Array, "batch pos d_model"],
-        Float[jax.Array, "batch pos head_index d_model"],
+    ) -> tuple[
+        Union[
+            Float[jax.Array, "batch pos d_model"],
+            Float[jax.Array, "batch pos head_index d_model"],
+        ],
+        Self,
     ]:
         x = x - x.mean(-1, keepdims=True)  # [batch, pos, length]
-        scale: Float[jax.Array, "batch pos 1"] = self.hook_scale(
-            jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps)
-        )
-        return self.hook_normalized(x / scale)
+        scale, self.hook_scale = self.hook_scale(jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps))
+        x, self.hook_normalized = self.hook_normalized(x / scale)
+        return x, self
 
 
 class RMSNorm(nnx.Module):
@@ -126,12 +130,10 @@ class RMSNorm(nnx.Module):
         self.hook_scale = HookPoint()  # [batch, pos, 1]
         self.hook_normalized = HookPoint()  # [batch, pos, length]
 
-    def __call__(self, x: Float[jax.Array, "batch pos length"]) -> Float[jax.Array, "batch pos length"]:
-        scale: Float[jax.Array, "batch pos 1"] = self.hook_scale(
-            jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps)
-        )
-        x = self.hook_normalized(x / scale)  # [batch, pos, length]
-        return x * self.w
+    def __call__(self, x: Float[jax.Array, "batch pos length"]) -> tuple[Float[jax.Array, "batch pos length"], Self]:
+        scale, self.hook_scale = self.hook_scale(jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps))
+        x, self.hook_normalized = self.hook_normalized(x / scale)  # [batch, pos, length]
+        return x * self.w, self
 
 
 class RMSNormPre(nnx.Module):
@@ -149,8 +151,7 @@ class RMSNormPre(nnx.Module):
         self.hook_scale = HookPoint()  # [batch, pos]
         self.hook_normalized = HookPoint()  # [batch, pos, length]
 
-    def __call__(self, x: Float[jax.Array, "batch pos length"]) -> Float[jax.Array, "batch pos length"]:
-        scale: Float[jax.Array, "batch pos 1"] = self.hook_scale(
-            jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps)
-        )
-        return self.hook_normalized(x / scale)  # [batch, pos, length]
+    def __call__(self, x: Float[jax.Array, "batch pos length"]) -> tuple[Float[jax.Array, "batch pos length"], Self]:
+        scale, self.hook_scale = self.hook_scale(jnp.sqrt((x**2).mean(-1, keepdims=True) + self.cfg.eps))
+        x, self.hook_normalized = self.hook_normalized(x / scale)  # [batch, pos, length]
+        return x, self

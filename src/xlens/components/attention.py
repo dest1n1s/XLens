@@ -185,10 +185,10 @@ class Attention(nnx.Module):
         if self.cfg.positional_embedding_type == "rotary":
             assert self.hook_rot_k is not None and self.hook_rot_q is not None, "Rotary hooks must be defined"
             assert self.cfg.rotary_dim is not None, "Rotary dim must be defined"
-            q = self.hook_rot_q(
+            q, self.hook_rot_q = self.hook_rot_q(
                 self.apply_rotary(q, kv_cache_pos_offset, attention_mask, rotary_dim=self.cfg.rotary_dim)
             )
-            k = self.hook_rot_k(
+            k, self.hook_rot_k = self.hook_rot_k(
                 self.apply_rotary(k, 0, attention_mask, rotary_dim=self.cfg.rotary_dim)
             )  # keys are cached so no offset
 
@@ -206,13 +206,13 @@ class Attention(nnx.Module):
                 attn_scores, kv_cache_pos_offset, attention_mask
             )  # [batch, head_index, query_pos, key_pos]
 
-        attn_scores = self.hook_attn_scores(attn_scores)
+        attn_scores, self.hook_attn_scores = self.hook_attn_scores(attn_scores)
 
         pattern = jax.nn.softmax(attn_scores, axis=-1)
         pattern = jnp.where(jnp.isnan(pattern), jnp.zeros_like(pattern), pattern)
-        pattern = self.hook_pattern(pattern)  # [batch, head_index, query_pos, key_pos]
+        pattern, self.hook_pattern = self.hook_pattern(pattern)  # [batch, head_index, query_pos, key_pos]
         z = self.calculate_z_scores(v, pattern)  # [batch, pos, head_index, d_head]
-        result = self.hook_result(
+        result, self.hook_result = self.hook_result(
             einops.einsum(
                 z,
                 self.W_O.value,
@@ -250,9 +250,9 @@ class Attention(nnx.Module):
                 + b
             )
 
-        q = self.hook_q(attn_fn(query_input, self.W_Q.value, self.b_Q.value))
-        k = self.hook_k(attn_fn(key_input, self.W_K.value, self.b_K.value))
-        v = self.hook_v(attn_fn(value_input, self.W_V.value, self.b_V.value))
+        q, self.hook_q = self.hook_q(attn_fn(query_input, self.W_Q.value, self.b_Q.value))
+        k, self.hook_k = self.hook_k(attn_fn(key_input, self.W_K.value, self.b_K.value))
+        v, self.hook_v = self.hook_v(attn_fn(value_input, self.W_V.value, self.b_V.value))
 
         return q, k, v
 
@@ -288,7 +288,7 @@ class Attention(nnx.Module):
             pattern,
             "batch head_index query_pos key_pos -> batch head_index query_pos key_pos",
         )
-        z = self.hook_z(
+        z, self.hook_z = self.hook_z(
             einops.rearrange(
                 pattern_ @ v_,
                 "batch head_index query_pos d_head -> batch query_pos head_index d_head",

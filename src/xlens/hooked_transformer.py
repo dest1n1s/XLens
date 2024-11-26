@@ -18,6 +18,7 @@ from xlens.components import (
     Unembed,
 )
 from xlens.hooks import with_cache, with_hooks
+from xlens.hooks.utilities import retrieve_cache
 from xlens.pretrained.convert import get_pretrained_model_config, get_pretrained_weights
 from xlens.utilities.functional import functional
 from xlens.utils import load_pretrained_weights
@@ -100,11 +101,12 @@ class HookedTransformer(nnx.Module):
                 is not computed automatically. Defaults to None.
         """
 
-        tokens = self.hook_tokens(input_ids)  # [batch, pos]
-        embed = self.hook_embed(self.embed(tokens))  # [batch, pos, d_model]
+        tokens, self.hook_tokens = self.hook_tokens(input_ids)  # [batch, pos]
+        embed, self.embed = self.embed(tokens)  # [batch, pos, d_model]
+        embed, self.hook_embed = self.hook_embed(embed)  # [batch, pos, d_model]
         self._check_kv_cache_consistency()  # Check that the KV cache is consistent
         past_kv_pos_offset = self.blocks[0].attn.past_kv_cache.length
-        pos_embed = self.hook_pos_embed(
+        pos_embed, self.hook_pos_embed = self.hook_pos_embed(
             self.pos_embed(tokens, past_kv_pos_offset, attention_mask)
         )  # [batch, pos, d_model]
         residual = embed + pos_embed
@@ -120,7 +122,7 @@ class HookedTransformer(nnx.Module):
 
         if self.cfg.normalization_type is not None:
             assert self.ln_final is not None, "ln_final should be set if normalization_type is set"
-            residual = self.ln_final(residual)  # [batch, pos, d_model]
+            residual, self.ln_final = self.ln_final(residual)  # [batch, pos, d_model]
 
         logits = self.unembed(residual)  # [batch, pos, d_vocab]
         return logits, self
@@ -146,7 +148,7 @@ class HookedTransformer(nnx.Module):
         self,
         input_ids: Int[jax.Array, "batch pos"],
         attention_mask: Optional[jax.Array] = None,  # [batch pos]
-        hooks: list[tuple[str, Callable[[Any], Any]]] = [],
+        hooks: list[tuple[str, Callable[[Any, Any], tuple[Any, Any]]]] = [],
     ) -> tuple[Float[jax.Array, "batch pos d_vocab"], Self]:
         """Forward Pass with hooks.
 
@@ -187,9 +189,10 @@ class HookedTransformer(nnx.Module):
             hook_names: list[str]: A list of strings, where each string is the name of a hook point
         """
 
-        model, cache = with_cache(self, hook_names)
+        model = with_cache(self, hook_names)
 
         out, model = model(input_ids, attention_mask=attention_mask)
+        cache = retrieve_cache(model, hook_names)
 
         return out, cache, model
 

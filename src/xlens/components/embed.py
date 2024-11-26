@@ -3,7 +3,7 @@
 This module contains all the component :class:`Embed`.
 """
 
-from typing import Optional
+from typing import Optional, Self
 
 import einops
 import flax.nnx as nnx
@@ -30,13 +30,15 @@ class Embed(nnx.Module):
         # Some models (e.g. Bloom) need post embedding layer norm
         self.ln = LayerNorm(self.cfg) if self.cfg.post_embedding_ln else None
 
-    def __call__(self, tokens: Int[jax.Array, "batch pos"]) -> Float[jax.Array, "batch pos d_model"]:
+    def __call__(self, tokens: Int[jax.Array, "batch pos"]) -> tuple[Float[jax.Array, "batch pos d_model"], Self]:
         # If A has shape [a, b] and B has shape [c, d], then A[:, B] has shape [a, c, d]
         # B acts as a tensor of indices into the second dimension (so >=0 and <b)
         if self.cfg.post_embedding_ln:
             assert self.ln is not None
-            return self.ln(self.W_E[tokens, :])
-        return self.W_E[tokens, :]
+            embedding, self.ln = self.ln(self.W_E[tokens, :])
+        else:
+            embedding = self.W_E[tokens, :]
+        return embedding, self
 
 
 def get_offset_position_ids(
