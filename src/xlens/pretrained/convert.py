@@ -9,6 +9,7 @@ import jax
 
 from xlens.config import HookedTransformerConfig
 from xlens.pretrained.converters import (
+    ChameleonConverter,
     GPT2Converter,
     GPTNeoXConverter,
     LlamaConverter,
@@ -24,6 +25,7 @@ converter = HuggingFaceModelConverter(
         LlamaConverter(),
         MistralConverter(),
         GPTNeoXConverter(),
+        ChameleonConverter(),
     ]
 )
 

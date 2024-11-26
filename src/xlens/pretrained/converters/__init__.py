@@ -1,3 +1,4 @@
+from .chameleon import ChameleonConverter
 from .gpt2 import GPT2Converter
 from .llama import LlamaConverter
 from .mistral import MistralConverter
@@ -10,4 +11,5 @@ __all__ = [
     "LlamaConverter",
     "MistralConverter",
     "Qwen2Converter",
+    "ChameleonConverter",
 ]
